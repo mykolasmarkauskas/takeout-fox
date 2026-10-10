@@ -30,6 +30,8 @@ export class FoxActor {
   }
 
   get ready() { return !!this.model; }
+  private own = new Set<Move>();
+  private hasOwn(m: Move) { return this.own.has(m); }
 
   private async load() {
     const url = import.meta.env.BASE_URL + 'models/marm.glb';
@@ -61,7 +63,7 @@ export class FoxActor {
         for (const clip of gltf.animations) {
           const n = clip.name.toLowerCase();
           const key: Move | null = n.includes('run') || n.includes('walk') ? 'run' : n.includes('jump') ? 'jump' : n.includes('slide') || n.includes('crouch') || n.includes('roll') ? 'slide' : n.includes('idle') || n.includes('stand') ? 'idle' : null;
-          if (key && !this.clips.has(key)) this.clips.set(key, this.mixer.clipAction(clip));
+          if (key && !this.clips.has(key)) { this.clips.set(key, this.mixer.clipAction(clip)); this.own.add(key); }
         }
         if (!this.clips.has('idle') && this.clips.has('run')) this.clips.set('idle', this.clips.get('run')!);
       }
@@ -80,6 +82,7 @@ export class FoxActor {
     const next = this.clips.get(move) ?? this.clips.get('run');
     this.current = move;
     if (!next) return;
+    if (prev === next && !force) return; // same clip (fallback) keeps playing, only its speed changes
     if (prev && prev !== next) prev.fadeOut(0.12);
     next.reset().setEffectiveWeight(1).fadeIn(0.12).play();
     if (move === 'jump' || move === 'slide') { next.setLoop(THREE.LoopRepeat, Infinity); }
@@ -94,6 +97,8 @@ export class FoxActor {
     if (this.mixer) {
       const run = this.clips.get('run');
       if (run && move === 'run') run.timeScale = 0.9 + speedFactor * 0.8;
+      // no dedicated jump/slide clips yet: slow the run cycle right down mid-air so the legs read as a leap
+      if (run && (move === 'jump' || move === 'slide') && !this.hasOwn(move)) run.timeScale = move === 'jump' ? 0.25 : 0.6;
       this.mixer.update(dt);
     }
     // procedural accents on top of (or instead of) clips
