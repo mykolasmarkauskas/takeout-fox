@@ -99,7 +99,9 @@ export class Chunk {
 
   /** Queue a decorative piece; merged per material after the chunk is built (few draw calls). */
   private put(g: THREE.BufferGeometry, m: THREE.Material, x: number, y: number, z: number, rx = 0, ry = 0, rz = 0, sx = 1, sy = 1, sz = 1, own = true) {
-    const geo2 = own ? g : g.clone();
+    let geo2 = own ? g : g.clone();
+    if (geo2.index) { const ni = geo2.toNonIndexed(); geo2.dispose(); geo2 = ni; } // merge needs uniform (non-indexed) geometry
+    for (const k of Object.keys(geo2.attributes)) if (k !== 'position' && k !== 'normal' && k !== 'uv') geo2.deleteAttribute(k);
     _q.setFromEuler(_e.set(rx, ry, rz));
     _m.compose(_v.set(x, y, z), _q, _s.set(sx, sy, sz));
     geo2.applyMatrix4(_m);
