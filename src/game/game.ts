@@ -3,7 +3,7 @@ import { createRaccoon, animateRaccoon, Raccoon } from './raccoon';
 import { RoomEnvironment } from 'three/examples/jsm/environments/RoomEnvironment.js';
 import { Audio, SfxName } from './audio';
 import { BASE_SPEED, COLORS, GRAVITY, HIT_WINDOW, JUMP_V, LANES, MAX_SPEED, SLIDE_TIME } from './constants';
-import { animateRun, createFox, Fox } from './fox';
+import { FoxActor } from './actor';
 import { World } from './world';
 
 type State = 'menu' | 'run' | 'crash' | 'over';
@@ -48,7 +48,7 @@ export class Game {
   readonly scene = new THREE.Scene();
   readonly camera = new THREE.PerspectiveCamera(58, 9 / 16, 0.1, 140);
   readonly world = new World();
-  readonly fox: Fox = createFox();
+  readonly fox = new FoxActor();
   readonly audio = new Audio();
   private chasers: THREE.Group[] = [];
   private raccoons: Raccoon[] = [];
@@ -200,8 +200,7 @@ export class Game {
     this.lastHit = -99; this.chaseGap = 14; this.crashT = 0;
     this.shield = false; this.dashT = 0; this.floatT = 0; this.showPower();
     this.gagT = 0; this.graceT = 0; this.nextGag = 450; if (this.gagEl) this.gagEl.style.display = 'none';
-    this.fox.group.scale.set(1, 1, 1); this.fox.group.rotation.set(0, 0, 0);
-    this.fox.body.scale.set(1, 1, 1); this.fox.group.position.set(0, 0, 0); this.fox.group.visible = true;
+    this.fox.reset();
     this.stars.visible = false; this.sheet.visible = false;
     this.districtIdx = -1; this.foodIdx = 0; this.nextDelivery = DELIVERY_EVERY;
     this.ui.card.classList.remove('on'); this.ui.customer.classList.remove('on'); this.ui.district.classList.remove('on');
@@ -293,7 +292,7 @@ export class Game {
     else if (this.state === 'crash') this.updateCrash(dt);
     else if (this.state === 'menu') {
       this.world.advance(BASE_SPEED * 0.5 * dt, 0);
-      animateRun(this.fox, this.time, 0.3, false, false);
+      this.fox.animate(this.time, dt, 0.3, false, false);
     }
   }
 
@@ -326,7 +325,7 @@ export class Game {
     const sliding = this.slideT > 0 && this.y < 0.05;
     this.fox.group.position.set(this.x, this.y, 0);
     this.fox.group.rotation.z = (tx - this.x) * -0.08;
-    animateRun(this.fox, this.time, this.speed / MAX_SPEED, this.y > 0.05, sliding);
+    this.fox.animate(this.time, dt, this.speed / MAX_SPEED, this.y > 0.05, sliding);
     this.fox.body.scale.y = sliding ? 0.75 : 1;
 
     // collisions
