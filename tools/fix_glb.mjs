@@ -4,7 +4,8 @@
 // usage: node tools/fix_glb.mjs in.glb out.glb [--rigid=teal] [--bone=Spine2]
 import { NodeIO } from '@gltf-transform/core';
 import { ALL_EXTENSIONS } from '@gltf-transform/extensions';
-import { textureCompress, prune, dedup, resample } from '@gltf-transform/functions';
+import { textureCompress, prune, dedup, resample, weld, simplify } from '@gltf-transform/functions';
+import { MeshoptSimplifier } from 'meshoptimizer';
 import sharp from 'sharp';
 
 const [, , inPath, outPath, ...flags] = process.argv;
@@ -74,6 +75,49 @@ for (const m of root.listMaterials()) {
   const mr = m.getMetallicRoughnessTexture();
   if (mr) { m.setMetallicRoughnessTexture(null); }
   m.setMetallicFactor(0); m.setRoughnessFactor(0.7); m.setDoubleSided(false);
+}
+// drop stray pieces Tripo sometimes adds (flat background cards beside the object):
+// keep the largest connected component plus anything whose centre lies inside its x/z footprint
+if (opt.clean) {
+  for (const m of root.listMeshes()) for (const pr of m.listPrimitives()) {
+    const idx = pr.getIndices(), pos = pr.getAttribute('POSITION');
+    if (!idx) continue;
+    const nv = pos.getCount(), parent = new Int32Array(nv).map((_, i) => i);
+    const find = (a) => { while (parent[a] !== a) { parent[a] = parent[parent[a]]; a = parent[a]; } return a; };
+    const ia = idx.getArray();
+    // weld by position first so UV seams don't split components
+    const key = new Map(), p = [0, 0, 0];
+    for (let i = 0; i < nv; i++) { pos.getElement(i, p); const k = p.map((v) => Math.round(v * 1e4)).join(','); const j = key.get(k); if (j === undefined) key.set(k, i); else parent[find(i)] = find(j); }
+    for (let t = 0; t < ia.length; t += 3) { const a = find(ia[t]), b = find(ia[t + 1]), c = find(ia[t + 2]); parent[b] = a; parent[find(c)] = a; }
+    const comp = new Map();
+    for (let t = 0; t < ia.length; t += 3) {
+      const r = find(ia[t]); let c = comp.get(r);
+      if (!c) comp.set(r, (c = { n: 0, min: [Infinity, Infinity, Infinity], max: [-Infinity, -Infinity, -Infinity], sum: [0, 0, 0] }));
+      c.n++;
+      for (let k = 0; k < 3; k++) { pos.getElement(ia[t + k], p); for (let d = 0; d < 3; d++) { c.min[d] = Math.min(c.min[d], p[d]); c.max[d] = Math.max(c.max[d], p[d]); c.sum[d] += p[d]; } }
+    }
+    const big = [...comp.values()].sort((a, b) => b.n - a.n)[0];
+    const keep = new Set();
+    for (const [r, c] of comp) {
+      const cx = c.sum[0] / (c.n * 3), cz = c.sum[2] / (c.n * 3);
+      if (c === big || (cx > big.min[0] && cx < big.max[0] && cz > big.min[2] && cz < big.max[2])) keep.add(r);
+    }
+    const out = [];
+    for (let t = 0; t < ia.length; t += 3) if (keep.has(find(ia[t]))) out.push(ia[t], ia[t + 1], ia[t + 2]);
+    const dropped = ia.length / 3 - out.length / 3;
+    idx.setArray(nv > 65535 ? new Uint32Array(out) : new Uint16Array(out));
+    console.log(`clean: ${comp.size} components, dropped ${dropped} stray triangles`);
+  }
+}
+
+// static props: decimate to roughly --tris triangles (Tripo HD meshes are ~1-2 M)
+if (opt.tris) {
+  await MeshoptSimplifier.ready;
+  let tris = 0;
+  for (const m of root.listMeshes()) for (const pr of m.listPrimitives()) tris += (pr.getIndices() ? pr.getIndices().getCount() : pr.getAttribute('POSITION').getCount()) / 3;
+  const ratio = Math.min(1, Number(opt.tris) / tris);
+  console.log(`triangles ${Math.round(tris)} -> target ${opt.tris} (ratio ${ratio.toFixed(4)})`);
+  await doc.transform(weld(), simplify({ simplifier: MeshoptSimplifier, ratio, error: Number(opt.err || 0.05), lockBorder: false }));
 }
 await doc.transform(
   prune(), dedup(), resample(),

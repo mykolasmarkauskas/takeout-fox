@@ -1,5 +1,6 @@
 import * as THREE from 'three';
 import { RoundedBoxGeometry } from 'three/examples/jsm/geometries/RoundedBoxGeometry.js';
+import { kitClone, kitHas, kitKeys, kitSize } from './kit';
 import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
 import { CHUNK_COUNT, CHUNK_LEN, COLORS, LANES, ObstacleKind, RECYCLE_Z } from './constants';
 
@@ -177,6 +178,20 @@ export class Chunk {
     for (const s of [-1, 1]) {
       let z = -1.5;
       while (z > -CHUNK_LEN + 3) {
+        const kits = kitKeys('bld_');
+        if (kits.length) {
+          // Tripo building, front (+Z) turned to face the street
+          const key = kits[Math.floor(rnd() * kits.length)];
+          const b = kitClone(key)!, sz = kitSize(key)!;
+          const k = 0.9 + rnd() * 0.2;
+          b.scale.setScalar(k);
+          b.rotation.y = s > 0 ? -Math.PI / 2 : Math.PI / 2;
+          const along = sz.x * k, across = sz.z * k;
+          b.position.set((4.9 + across / 2) * s, -0.9, z - along / 2);
+          this.dyn.add(b);
+          z -= along + 0.25;
+          continue;
+        }
         const w = 3 + rnd() * 3, h = 2.4 + rnd() * 5, len = 4 + rnd() * 4.5;
         this.building(s, z, w, h, len, rnd);
         // hanging lantern with cap and tassel on the street side
@@ -260,7 +275,10 @@ export class Chunk {
     const g = new THREE.Group();
     const add = (mesh: THREE.Mesh, x: number, y: number, zz: number) => { mesh.position.set(x, y, zz); mesh.userData.own = true; mesh.receiveShadow = true; g.add(mesh); return mesh; };
     let depth = 1;
-    if (kind === 'chimney') {
+    if ((kind === 'chimney' || kind === 'crate' || kind === 'laundry') && kitHas(kind)) {
+      g.add(kitClone(kind)!);
+      depth = kind === 'chimney' ? 1.5 : kind === 'crate' ? 1.4 : 0.3;
+    } else if (kind === 'chimney') {
       add(rbox(1.5, 3.2, 1.5, 0.24, M.brick), 0, 1.6, 0);
       for (const y of [0.9, 1.9, 2.7]) add(rbox(1.58, 0.1, 1.58, 0.05, M.trim), 0, y, 0);
       add(rbox(1.95, 0.4, 1.95, 0.16, M.trim), 0, 3.4, 0);

@@ -25,6 +25,7 @@ export class Audio {
   private musicSrc: AudioBufferSourceNode | null = null;
   private musicGain: GainNode | null = null;
   private sfxGain: GainNode | null = null;
+  private voiceGain: GainNode | null = null;
   private loading: Promise<void> | null = null;
   muted = false;
 
@@ -39,6 +40,9 @@ export class Audio {
       this.sfxGain = this.ctx.createGain();
       this.sfxGain.gain.value = 0.9;
       this.sfxGain.connect(this.ctx.destination);
+      this.voiceGain = this.ctx.createGain();
+      this.voiceGain.gain.value = 1.0;
+      this.voiceGain.connect(this.ctx.destination);
       this.loading = this.loadAll();
     }
     if (this.ctx.state === 'suspended') this.ctx.resume();
@@ -78,9 +82,14 @@ export class Audio {
     try { this.voiceSrc?.stop(); } catch { /* already ended */ }
     const s = this.ctx.createBufferSource();
     s.buffer = b;
-    s.connect(this.sfxGain!);
+    s.connect(this.voiceGain!);
     s.start();
     this.voiceSrc = s;
+    // duck the music under the line so speech stays clear
+    const g = this.musicGain!.gain, t = this.ctx.currentTime;
+    g.cancelScheduledValues(t);
+    g.setTargetAtTime(0.12, t, 0.03);
+    g.setTargetAtTime(0.35, t + b.duration + 0.1, 0.25);
   }
 
   async startMusic() {

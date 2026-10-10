@@ -4,6 +4,7 @@ import { RoomEnvironment } from 'three/examples/jsm/environments/RoomEnvironment
 import { Audio, SfxName } from './audio';
 import { BASE_SPEED, COLORS, GRAVITY, HIT_WINDOW, JUMP_V, LANES, MAX_SPEED, SLIDE_TIME } from './constants';
 import { FoxActor } from './actor';
+import { loadKit } from './kit';
 import { World } from './world';
 
 type State = 'menu' | 'run' | 'crash' | 'over';
@@ -123,6 +124,7 @@ export class Game {
     this.sun = sun;
 
     this.scene.add(this.world.group);
+    loadKit().then(() => { if (this.state === 'menu') this.world.reset(1); });
     this.scene.add(this.fox.group);
     const pw = document.createElement('div');
     pw.style.cssText = 'position:absolute;left:14px;top:58px;display:flex;gap:6px;pointer-events:none;font:800 14px system-ui;color:#fff;text-shadow:0 2px 0 rgba(0,0,0,.35)';
