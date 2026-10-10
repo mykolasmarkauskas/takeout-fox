@@ -2,8 +2,23 @@ import * as THREE from 'three';
 import { RoundedBoxGeometry } from 'three/examples/jsm/geometries/RoundedBoxGeometry.js';
 import { COLORS } from './constants';
 
-const mat = (c: number, rough = 0.55, extra: Partial<THREE.MeshStandardMaterialParameters> = {}) =>
-  new THREE.MeshStandardMaterial({ color: c, roughness: rough, metalness: 0, ...extra });
+const mat = (c: number, rough = 0.55, extra: Partial<THREE.MeshPhysicalMaterialParameters> = {}) =>
+  new THREE.MeshPhysicalMaterial({ color: c, roughness: rough, metalness: 0, clearcoat: 0.25, clearcoatRoughness: 0.35, ...extra });
+/** Plush fabric / fur: soft sheen at grazing angles, almost no clearcoat. */
+const plush = (c: number, sheen: number, rough = 0.62) =>
+  new THREE.MeshPhysicalMaterial({ color: c, roughness: rough, metalness: 0, clearcoat: 0.08, clearcoatRoughness: 0.6, sheen: 1, sheenRoughness: 0.45, sheenColor: new THREE.Color(sheen) });
+/** Smooth teardrop (rounded tip) of base width w, height h, depth d, built with a lathe. */
+function teardrop(w: number, h: number, d: number, m: THREE.Material) {
+  const pts: THREE.Vector2[] = [];
+  for (let i = 0; i <= 24; i++) {
+    const t = i / 24;
+    pts.push(new THREE.Vector2(w * Math.pow(Math.sin(Math.PI * Math.pow(t, 0.62)), 0.85), t * h));
+  }
+  const mesh = new THREE.Mesh(new THREE.LatheGeometry(pts, 24), m);
+  mesh.scale.z = d / w;
+  mesh.castShadow = true;
+  return mesh;
+}
 
 export interface Fox {
   group: THREE.Group; // moves in the world
@@ -17,19 +32,19 @@ export interface Fox {
   eyes: THREE.Mesh[];
 }
 
-function ball(r: number, m: THREE.Material, sx = 1, sy = 1, sz = 1, seg = 28) {
+function ball(r: number, m: THREE.Material, sx = 1, sy = 1, sz = 1, seg = 32) {
   const mesh = new THREE.Mesh(new THREE.SphereGeometry(r, seg, Math.round(seg * 0.65)), m);
   mesh.scale.set(sx, sy, sz);
   mesh.castShadow = true;
   return mesh;
 }
 function capsule(r: number, len: number, m: THREE.Material) {
-  const mesh = new THREE.Mesh(new THREE.CapsuleGeometry(r, len, 8, 18), m);
+  const mesh = new THREE.Mesh(new THREE.CapsuleGeometry(r, len, 8, 24), m);
   mesh.castShadow = true;
   return mesh;
 }
 function rbox(w: number, h: number, d: number, rad: number, m: THREE.Material) {
-  const mesh = new THREE.Mesh(new RoundedBoxGeometry(w, h, d, 5, rad), m);
+  const mesh = new THREE.Mesh(new RoundedBoxGeometry(w, h, d, 4, rad), m);
   mesh.castShadow = true;
   return mesh;
 }
@@ -40,19 +55,19 @@ export function createFox(): Fox {
   const body = new THREE.Group();
   group.add(body);
 
-  const fur = mat(COLORS.fur, 0.5);
-  const furDark = mat(0xd9691a, 0.55);
-  const cream = mat(COLORS.cream, 0.55);
-  const hoodie = mat(COLORS.hoodie, 0.7);
-  const hoodieDark = mat(0xcf8d24, 0.75);
+  const fur = plush(COLORS.fur, 0xffc58a, 0.6);
+  const furDark = plush(0xd9691a, 0xff9a55, 0.62);
+  const cream = plush(COLORS.cream, 0xffffff, 0.6);
+  const hoodie = plush(COLORS.hoodie, 0xffe29a, 0.7);
+  const hoodieDark = plush(0xcf8d24, 0xffd27a, 0.75);
   const shorts = mat(COLORS.shorts, 0.8);
   const cap = mat(COLORS.cap, 0.5);
   const capDark = mat(0x74291c, 0.55);
-  const teal = mat(COLORS.teal, 0.45);
+  const teal = mat(COLORS.teal, 0.4, { clearcoat: 0.5, clearcoatRoughness: 0.2 });
   const tealDark = mat(0x23796f, 0.5);
-  const white = mat(0xffffff, 0.35);
+  const white = mat(0xffffff, 0.25, { clearcoat: 0.8, clearcoatRoughness: 0.12 });
   const sole = mat(0xd9d4cc, 0.6);
-  const dark = mat(0x2a1a14, 0.35);
+  const dark = mat(0x2a1a14, 0.18, { clearcoat: 1, clearcoatRoughness: 0.06 });
 
   // ---- torso: hoodie capsule, cream cuffs, hood, pocket
   const torso = capsule(0.46, 0.38, hoodie);
@@ -91,17 +106,14 @@ export function createFox(): Fox {
     cheek.position.set(0.3 * s, -0.24, -0.26);
     head.add(cheek);
   }
-  const snout = new THREE.Mesh(new THREE.ConeGeometry(0.25, 0.55, 20), fur);
-  snout.rotation.x = -Math.PI / 2;
-  snout.position.set(0, -0.12, -0.62);
-  snout.scale.set(1, 1, 0.8);
-  snout.castShadow = true;
+  const snout = ball(0.27, fur, 0.86, 0.72, 1.55);
+  snout.position.set(0, -0.1, -0.56);
   head.add(snout);
   const chin = ball(0.2, cream, 1.0, 0.55, 1.5);
   chin.position.set(0, -0.26, -0.5);
   head.add(chin);
-  const nose = ball(0.075, dark, 1.2, 0.9, 1);
-  nose.position.set(0, -0.08, -0.9);
+  const nose = ball(0.085, dark, 1.2, 0.9, 1);
+  nose.position.set(0, -0.03, -0.9);
   head.add(nose);
   const mouth = new THREE.Mesh(new THREE.TorusGeometry(0.11, 0.014, 6, 16, Math.PI), dark);
   mouth.position.set(0, -0.2, -0.78);
@@ -126,14 +138,13 @@ export function createFox(): Fox {
     brow.rotation.z = -0.15 * s;
     head.add(brow);
     // ear: tall, dark back, cream inner
-    const ear = new THREE.Mesh(new THREE.ConeGeometry(0.3, 0.85, 4, 1), furDark);
-    ear.position.set(0.4 * s, 0.7, 0.1);
-    ear.rotation.set(-0.05, Math.PI / 4, -0.28 * s);
-    ear.castShadow = true;
+    const ear = teardrop(0.27, 0.9, 0.13, furDark);
+    ear.position.set(0.4 * s, 0.38, 0.08);
+    ear.rotation.set(-0.06, 0, -0.32 * s);
     head.add(ear);
-    const earIn = new THREE.Mesh(new THREE.ConeGeometry(0.19, 0.6, 4, 1), cream);
-    earIn.position.set(0.4 * s, 0.66, 0.03);
-    earIn.rotation.set(-0.05, Math.PI / 4, -0.28 * s);
+    const earIn = teardrop(0.17, 0.66, 0.08, cream);
+    earIn.position.set(0.4 * s, 0.4, 0.0);
+    earIn.rotation.set(-0.06, 0, -0.32 * s);
     head.add(earIn);
   }
   // flat cap, set back so the eyes stay visible
@@ -141,7 +152,7 @@ export function createFox(): Fox {
   capG.position.set(0, 0.38, 0.1);
   capG.rotation.x = 0.28;
   head.add(capG);
-  const dome = ball(0.52, cap, 1.1, 0.55, 1.08);
+  const dome = ball(0.52, cap, 1.1, 0.6, 1.08);
   dome.position.set(0, 0.06, 0);
   capG.add(dome);
   const band = new THREE.Mesh(new THREE.TorusGeometry(0.5, 0.035, 8, 32), capDark);
@@ -149,10 +160,8 @@ export function createFox(): Fox {
   band.rotation.x = Math.PI / 2;
   band.scale.set(1.1, 1.06, 1);
   capG.add(band);
-  const brim = new THREE.Mesh(new THREE.CylinderGeometry(0.46, 0.46, 0.07, 28, 1, false, -Math.PI / 2, Math.PI), capDark);
-  brim.rotation.y = Math.PI;
-  brim.position.set(0, -0.06, -0.4);
-  brim.scale.set(1.0, 1, 0.85);
+  const brim = ball(0.44, capDark, 1.0, 0.2, 0.92);
+  brim.position.set(0, -0.07, -0.34);
   capG.add(brim);
   const button = ball(0.05, capDark);
   button.position.set(0, 0.34, 0);

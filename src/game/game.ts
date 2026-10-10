@@ -1,4 +1,6 @@
 import * as THREE from 'three';
+import { createRaccoon, animateRaccoon, Raccoon } from './raccoon';
+import { RoomEnvironment } from 'three/examples/jsm/environments/RoomEnvironment.js';
 import { Audio, SfxName } from './audio';
 import { BASE_SPEED, COLORS, GRAVITY, HIT_WINDOW, JUMP_V, LANES, MAX_SPEED, SLIDE_TIME } from './constants';
 import { animateRun, createFox, Fox } from './fox';
@@ -49,6 +51,7 @@ export class Game {
   readonly fox: Fox = createFox();
   readonly audio = new Audio();
   private chasers: THREE.Group[] = [];
+  private raccoons: Raccoon[] = [];
   private stars: THREE.Group;
   private sheet: THREE.Mesh;
 
@@ -100,15 +103,21 @@ export class Game {
     this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
     this.renderer.shadowMap.enabled = true;
     this.renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+    this.renderer.toneMapping = THREE.ACESFilmicToneMapping;
+    this.renderer.toneMappingExposure = 0.95;
     this.scene.background = new THREE.Color(COLORS.sky);
     this.scene.fog = new THREE.Fog(COLORS.fog, 30, 110);
 
-    const hemi = new THREE.HemisphereLight(0xfff0d6, 0xb07a55, 1.15);
+    const pm = new THREE.PMREMGenerator(this.renderer);
+    this.scene.environment = pm.fromScene(new RoomEnvironment(), 0.04).texture;
+    this.scene.environmentIntensity = 0.4;
+    const hemi = new THREE.HemisphereLight(0xfff0d6, 0xb07a55, 0.7);
     this.scene.add(hemi);
     const sun = new THREE.DirectionalLight(0xffd9a0, 2.2);
     sun.position.set(-6, 14, 8);
     sun.castShadow = true;
-    sun.shadow.mapSize.set(1024, 1024);
+    sun.shadow.mapSize.set(1536, 1536);
+    sun.shadow.radius = 5; sun.shadow.bias = -0.0004; sun.shadow.normalBias = 0.03;
     Object.assign(sun.shadow.camera, { left: -9, right: 9, top: 9, bottom: -9, near: 1, far: 40 });
     this.scene.add(sun, sun.target);
     this.sun = sun;
@@ -129,28 +138,14 @@ export class Game {
     this.ui.score.parentElement?.parentElement?.appendChild(gg);
     this.gagEl = gg; this.gagImg = gi; this.gagCap = gc;
 
-    // three hangry raccoon blobs chasing
+    // three Hangry Crowd raccoons chasing behind the fox
     for (let i = 0; i < 3; i++) {
-      const g = new THREE.Group();
-      const m = new THREE.MeshStandardMaterial({ color: COLORS.raccoon, roughness: 0.7 });
-      const b = new THREE.Mesh(new THREE.SphereGeometry(0.5, 16, 12), m);
-      b.scale.set(1, 1.2, 0.9); b.position.y = 0.8; b.castShadow = true;
-      const apron = new THREE.Mesh(new THREE.SphereGeometry(0.42, 12, 10), new THREE.MeshStandardMaterial({ color: COLORS.cream }));
-      apron.scale.set(0.9, 1, 0.5); apron.position.set(0, 0.75, -0.3);
-      const mask = new THREE.Mesh(new THREE.SphereGeometry(0.2, 10, 8), new THREE.MeshStandardMaterial({ color: 0x2b2b2e }));
-      mask.scale.set(1.9, 0.8, 0.5); mask.position.set(0, 1.15, -0.4);
-      const earM = new THREE.MeshStandardMaterial({ color: COLORS.raccoon });
-      for (const sx of [-1, 1]) {
-        const ear = new THREE.Mesh(new THREE.ConeGeometry(0.15, 0.3, 8), earM);
-        ear.position.set(0.28 * sx, 1.55, 0); g.add(ear);
-        const eye = new THREE.Mesh(new THREE.SphereGeometry(0.07, 8, 6), new THREE.MeshBasicMaterial({ color: 0xffffff }));
-        eye.position.set(0.14 * sx, 1.17, -0.55); g.add(eye);
-      }
-      g.add(b, apron, mask);
-      g.rotation.y = Math.PI; // face the fox (chasers run toward -z)
-      g.position.set(LANES[i], 0, 20);
-      this.scene.add(g);
-      this.chasers.push(g);
+      const r = createRaccoon();
+      r.group.position.set(LANES[i], 0, 20);
+      r.group.scale.setScalar(0.9);
+      this.scene.add(r.group);
+      this.chasers.push(r.group);
+      this.raccoons.push(r);
     }
 
     // dizzy stars ring and ghost sheet for crash animations
@@ -474,6 +469,7 @@ export class Game {
       const z = this.chaseGap + 2 + (i === 1 ? 0.8 : 0);
       c.position.set(LANES[i] * 0.8 + Math.sin(this.time * 3 + i) * 0.2, Math.abs(Math.sin(this.time * 10 + i)) * 0.2, Math.min(z, 18));
       c.visible = z < 16;
+      if (c.visible) animateRaccoon(this.raccoons[i], this.time, i * 2.1);
     });
   }
 
