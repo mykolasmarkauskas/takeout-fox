@@ -2,6 +2,9 @@ import * as THREE from 'three';
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
 import { animateRun, createFox, Fox } from './fox';
 
+/** Extra yaw applied to the loaded model so it faces -Z. */
+const MODEL_YAW = Math.PI;
+
 export type Move = 'idle' | 'run' | 'jump' | 'slide';
 
 /**
@@ -38,6 +41,7 @@ export class FoxActor {
       const size = new THREE.Vector3(); box.getSize(size);
       const s = 2.75 / size.y;
       m.scale.setScalar(s);
+      m.rotation.y = MODEL_YAW; // generated models usually face +Z; the game runs toward -Z
       box.setFromObject(m);
       m.position.set(-(box.min.x + box.max.x) / 2, -box.min.y, -(box.min.z + box.max.z) / 2);
       m.traverse((o) => {
