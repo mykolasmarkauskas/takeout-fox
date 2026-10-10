@@ -288,10 +288,14 @@ export class Game {
   }
 
   // ---- loop
+  /** Set while a full-screen overlay hides the game. */
+  hold = false;
+
   private loop(now: number) {
     requestAnimationFrame((t) => this.loop(t));
     const dt = Math.min(0.1, (now - this.last) / 1000 || 0);
     this.last = now;
+    if (this.hold) return; // full-screen overlay (story intro) covers the canvas: save the GPU/battery
     this.acc += dt;
     const step = 1 / 60;
     while (this.acc >= step) { this.update(step); this.acc -= step; }
@@ -364,7 +368,7 @@ export class Game {
       if (cz - 45 > 0 || cz < -45) continue;
       for (const o of c.obstacles) {
         const z = cz + o.z;
-        if (o.hit || Math.abs(z) > o.depth / 2 + 0.5) continue;
+        if (o.hit || Math.abs(z) > o.depth / 2 + 0.35) continue; // ~fox half-depth, a touch forgiving
         if (o.lane !== this.nearestLane()) continue;
         let hit = false;
         if (o.kind === 'chimney') hit = true;
@@ -479,8 +483,8 @@ export class Game {
       this.sheet.position.y = 0.9 + Math.abs(Math.sin(t * 8)) * 0.12;
       this.sheet.rotation.z = Math.sin(t * 10) * 0.12;
     } else {
-      f.group.rotation.z = Math.min(1.4, t * 5);
-      f.group.position.y = Math.max(0, 0.5 - t);
+      if (f.has('fall')) { f.act('fall', dt); f.group.position.y = Math.max(0, f.group.position.y - dt * 4); }
+      else { f.group.rotation.z = Math.min(1.4, t * 5); f.group.position.y = Math.max(0, 0.5 - t); }
       this.stars.position.set(f.group.position.x, 2.6, 0);
       this.stars.children.forEach((s) => {
         const a = s.userData.a + t * 5;

@@ -14,10 +14,10 @@ const game = new Game($('c') as HTMLCanvasElement, {
 const startWithIntro = () => {
   if (introSeen()) { game.start(); return; }
   game.audio.unlock();
-  playIntro($('frame'), () => game.start());
+  playIntro($('frame'), () => { game.hold = false; game.start(); }); game.hold = true;
 };
 $('play').addEventListener('click', startWithIntro);
-$('story').addEventListener('click', () => { game.audio.unlock(); playIntro($('frame'), () => game.start()); });
+$('story').addEventListener('click', () => { game.audio.unlock(); playIntro($('frame'), () => { game.hold = false; game.start(); }); game.hold = true; });
 $('again').addEventListener('click', () => game.start());
 
 window.addEventListener('keydown', (e) => {

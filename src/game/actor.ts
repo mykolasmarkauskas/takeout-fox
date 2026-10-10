@@ -5,7 +5,7 @@ import { animateRun, createFox, Fox } from './fox';
 /** Extra yaw applied to the loaded model so it faces -Z. */
 const MODEL_YAW = Math.PI;
 
-export type Move = 'idle' | 'run' | 'jump' | 'slide';
+export type Move = 'idle' | 'run' | 'jump' | 'slide' | 'fall';
 
 /**
  * The fox on screen. Starts as the code-built placeholder and swaps to the GLB model
@@ -62,8 +62,14 @@ export class FoxActor {
         this.mixer = new THREE.AnimationMixer(m);
         for (const clip of gltf.animations) {
           const n = clip.name.toLowerCase();
-          const key: Move | null = n.includes('run') || n.includes('walk') ? 'run' : n.includes('jump') ? 'jump' : n.includes('slide') || n.includes('crouch') || n.includes('roll') ? 'slide' : n.includes('idle') || n.includes('stand') ? 'idle' : null;
-          if (key && !this.clips.has(key)) { this.clips.set(key, this.mixer.clipAction(clip)); this.own.add(key); }
+          const key: Move | null = n.includes('run') || n.includes('walk') ? 'run' : n.includes('jump') ? 'jump' : n.includes('fall') ? 'fall' : n.includes('slide') || n.includes('crouch') || n.includes('roll') ? 'slide' : n.includes('idle') || n.includes('stand') ? 'idle' : null;
+          if (!key || this.clips.has(key)) continue;
+          let c = clip;
+          if (key === 'jump') c = oneHop(clip);
+          const a = this.mixer.clipAction(c);
+          if (key === 'jump' || key === 'fall') { a.setLoop(THREE.LoopOnce, 1); a.clampWhenFinished = true; }
+          if (key === 'fall') a.timeScale = 1.6;
+          this.clips.set(key, a); this.own.add(key);
         }
         if (!this.clips.has('idle') && this.clips.has('run')) this.clips.set('idle', this.clips.get('run')!);
       }
@@ -85,7 +91,18 @@ export class FoxActor {
     if (prev === next && !force) return; // same clip (fallback) keeps playing, only its speed changes
     if (prev && prev !== next) prev.fadeOut(0.12);
     next.reset().setEffectiveWeight(1).fadeIn(0.12).play();
-    if (move === 'jump' || move === 'slide') { next.setLoop(THREE.LoopRepeat, Infinity); }
+    if (move === 'slide' && !this.hasOwn('slide')) next.setLoop(THREE.LoopRepeat, Infinity);
+    if (move === 'jump' && !this.hasOwn('jump')) next.setLoop(THREE.LoopRepeat, Infinity);
+  }
+
+  /** Has a real (non-fallback) clip for this move. */
+  has(move: Move) { return this.own.has(move); }
+
+  /** Drive a one-off clip (e.g. 'fall' during a crash) without the run logic. */
+  act(move: Move, dt: number) {
+    if (!this.model || !this.mixer) return;
+    this.play(move);
+    this.mixer.update(dt);
   }
 
   /** Per-frame animation. speedFactor 0..1. */
@@ -97,6 +114,9 @@ export class FoxActor {
     if (this.mixer) {
       const run = this.clips.get('run');
       if (run && move === 'run') run.timeScale = 0.9 + speedFactor * 0.8;
+      // one hop spread over the real airtime (~0.7 s): tuck on the way up, legs out for landing
+      const jump = this.clips.get('jump');
+      if (jump && move === 'jump' && this.hasOwn('jump')) jump.timeScale = jump.getClip().duration / 0.62;
       // no dedicated jump/slide clips yet: slow the run cycle right down mid-air so the legs read as a leap
       if (run && (move === 'jump' || move === 'slide') && !this.hasOwn(move)) run.timeScale = move === 'jump' ? 0.25 : 0.6;
       this.mixer.update(dt);
@@ -116,4 +136,28 @@ export class FoxActor {
     this.body.scale.set(1, 1, 1);
     if (this.model) { this.model.rotation.set(0, 0, 0); }
   }
+}
+
+/**
+ * Tripo's "jump" preset is a few hops in place. Keep one hop (take-off crouch to
+ * landing) and drop the hips' vertical travel: the game already moves the fox up.
+ */
+function oneHop(clip: THREE.AnimationClip) {
+  const hips = clip.tracks.find((t) => /hips\.position$/i.test(t.name));
+  let t0 = 0.42, t1 = 0.92;
+  if (hips) {
+    // find the 2nd local minimum of hips height (crouch before a hop) and the next one
+    const tt = hips.times, v = hips.values, mins: number[] = [];
+    for (let i = 1; i < tt.length - 1; i++) if (v[i * 3 + 1] <= v[i * 3 - 2] && v[i * 3 + 1] < v[i * 3 + 4]) mins.push(tt[i]);
+    if (mins.length >= 2) { t0 = mins[0]; t1 = mins[1]; }
+  }
+  const out = clip.clone();
+  out.name = 'jump_hop';
+  out.tracks = out.tracks.filter((t) => !/hips\.position$/i.test(t.name)).map((t) => {
+    const tr = t.clone();
+    tr.trim(t0, t1); tr.shift(-t0);
+    return tr;
+  });
+  out.resetDuration();
+  return out;
 }

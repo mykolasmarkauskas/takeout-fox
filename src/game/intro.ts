@@ -44,9 +44,10 @@ export function playIntro(host: HTMLElement, onDone: () => void, say?: (line: st
     if (n >= PANELS.length) { finish(); return; }
     i = n;
     const p = PANELS[i];
-    img.classList.remove('in'); void img.offsetWidth;
+    img.classList.remove('in');
+    img.onload = () => { void img.offsetWidth; img.classList.add('in'); };
     img.src = base + p.img + '.webp';
-    img.classList.add('in');
+    if (img.complete && img.naturalWidth) img.onload(new Event('load'));
     text.textContent = p.text;
     say?.(p.img);
     Array.from(dots.children).forEach((d, k) => d.classList.toggle('on', k === i));
