@@ -41,9 +41,14 @@ export class FoxActor {
       const size = new THREE.Vector3(); box.getSize(size);
       const s = 2.75 / size.y;
       m.scale.setScalar(s);
-      m.rotation.y = MODEL_YAW; // generated models usually face +Z; the game runs toward -Z
       box.setFromObject(m);
       m.position.set(-(box.min.x + box.max.x) / 2, -box.min.y, -(box.min.z + box.max.z) / 2);
+      // pose (procedural lean/bob) > yaw (generated models face +Z, the game runs toward -Z) > model
+      const yaw = new THREE.Group();
+      yaw.rotation.y = MODEL_YAW;
+      yaw.add(m);
+      const pose = new THREE.Group();
+      pose.add(yaw);
       m.traverse((o) => {
         if (o instanceof THREE.Mesh) {
           o.castShadow = true; o.receiveShadow = false;
@@ -61,8 +66,8 @@ export class FoxActor {
         if (!this.clips.has('idle') && this.clips.has('run')) this.clips.set('idle', this.clips.get('run')!);
       }
       if (this.placeholder) { this.body.remove(this.placeholder.group); this.placeholder = null; }
-      this.model = m;
-      this.body.add(m);
+      this.model = pose;
+      this.body.add(pose);
       this.play(this.current, true);
     } catch (e) {
       console.warn('fox model not loaded, keeping placeholder', e);
