@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import { modelUrl } from './assetUrl';
 import { RoundedBoxGeometry } from 'three/examples/jsm/geometries/RoundedBoxGeometry.js';
 import { COLORS } from './constants';
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
@@ -7,7 +8,7 @@ import * as SkeletonUtils from 'three/examples/jsm/utils/SkeletonUtils.js';
 /** Tripo raccoon (rigged, in-place run). Resolves null if the file isn't there. */
 let glbPromise: Promise<{ scene: THREE.Object3D; clip: THREE.AnimationClip | null } | null> | null = null;
 export function loadRaccoonGLB() {
-  if (!glbPromise) glbPromise = new GLTFLoader().loadAsync(import.meta.env.BASE_URL + 'models/raccoon.glb')
+  if (!glbPromise) glbPromise = new GLTFLoader().loadAsync(modelUrl('models/raccoon.glb'))
     .then((g) => ({ scene: g.scene, clip: g.animations[0] ?? null }))
     .catch(() => null);
   return glbPromise;
