@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import { modelUrl } from './assetUrl';
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
 import { animateRun, createFox, Fox } from './fox';
 
@@ -34,7 +35,7 @@ export class FoxActor {
   private hasOwn(m: Move) { return this.own.has(m); }
 
   private async load() {
-    const url = import.meta.env.BASE_URL + 'models/marm.glb';
+    const url = modelUrl('models/marm.glb');
     try {
       const gltf = await new GLTFLoader().loadAsync(url);
       const m = gltf.scene;

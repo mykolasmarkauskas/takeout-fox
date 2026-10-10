@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import { modelUrl } from './assetUrl';
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
 
 /**
@@ -28,7 +29,7 @@ export function loadKit() {
   const loader = new GLTFLoader();
   loading = Promise.all(Object.entries(KIT).map(async ([key, spec]) => {
     try {
-      const gltf = await loader.loadAsync(import.meta.env.BASE_URL + spec.url);
+      const gltf = await loader.loadAsync(modelUrl(spec.url));
       const root = gltf.scene;
       const box = new THREE.Box3().setFromObject(root);
       const size = new THREE.Vector3(); box.getSize(size);
