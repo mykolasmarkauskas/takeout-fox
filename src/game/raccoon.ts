@@ -1,6 +1,39 @@
 import * as THREE from 'three';
 import { RoundedBoxGeometry } from 'three/examples/jsm/geometries/RoundedBoxGeometry.js';
 import { COLORS } from './constants';
+import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
+import * as SkeletonUtils from 'three/examples/jsm/utils/SkeletonUtils.js';
+
+/** Tripo raccoon (rigged, in-place run). Resolves null if the file isn't there. */
+let glbPromise: Promise<{ scene: THREE.Object3D; clip: THREE.AnimationClip | null } | null> | null = null;
+export function loadRaccoonGLB() {
+  if (!glbPromise) glbPromise = new GLTFLoader().loadAsync(import.meta.env.BASE_URL + 'models/raccoon.glb')
+    .then((g) => ({ scene: g.scene, clip: g.animations[0] ?? null }))
+    .catch(() => null);
+  return glbPromise;
+}
+/** One placed, animated copy of the GLB raccoon, ~2.3 units tall, facing -Z. */
+export function raccoonInstance(src: { scene: THREE.Object3D; clip: THREE.AnimationClip | null }, phase: number) {
+  const m = SkeletonUtils.clone(src.scene);
+  const box = new THREE.Box3().setFromObject(m);
+  const size = new THREE.Vector3(); box.getSize(size);
+  m.scale.setScalar(2.3 / size.y);
+  box.setFromObject(m);
+  m.position.set(-(box.min.x + box.max.x) / 2, -box.min.y, -(box.min.z + box.max.z) / 2);
+  m.traverse((o) => { if (o instanceof THREE.Mesh) { o.castShadow = true; o.frustumCulled = false; } });
+  const yaw = new THREE.Group();
+  yaw.rotation.y = Math.PI; // generated models face +Z
+  yaw.add(m);
+  let mixer: THREE.AnimationMixer | null = null;
+  if (src.clip) {
+    mixer = new THREE.AnimationMixer(m);
+    const a = mixer.clipAction(src.clip);
+    a.play();
+    a.time = phase * src.clip.duration;
+    a.timeScale = 1.15;
+  }
+  return { root: yaw, mixer };
+}
 
 const plush = (c: number, sheen: number, rough = 0.65) =>
   new THREE.MeshPhysicalMaterial({ color: c, roughness: rough, metalness: 0, sheen: 1, sheenRoughness: 0.5, sheenColor: new THREE.Color(sheen) });

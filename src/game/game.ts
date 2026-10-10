@@ -1,9 +1,10 @@
 import * as THREE from 'three';
-import { createRaccoon, animateRaccoon, Raccoon } from './raccoon';
+import { createRaccoon, animateRaccoon, Raccoon, loadRaccoonGLB, raccoonInstance } from './raccoon';
 import { RoomEnvironment } from 'three/examples/jsm/environments/RoomEnvironment.js';
 import { Audio, SfxName } from './audio';
 import { BASE_SPEED, COLORS, GRAVITY, HIT_WINDOW, JUMP_V, LANES, MAX_SPEED, SLIDE_TIME } from './constants';
 import { FoxActor } from './actor';
+import { loadKit } from './kit';
 import { World } from './world';
 
 type State = 'menu' | 'run' | 'crash' | 'over';
@@ -52,6 +53,7 @@ export class Game {
   readonly audio = new Audio();
   private chasers: THREE.Group[] = [];
   private raccoons: Raccoon[] = [];
+  private raccoonMixers: (THREE.AnimationMixer | null)[] = [];
   private stars: THREE.Group;
   private sheet: THREE.Mesh;
 
@@ -123,6 +125,7 @@ export class Game {
     this.sun = sun;
 
     this.scene.add(this.world.group);
+    loadKit().then(() => { if (this.state === 'menu') this.world.reset(1); });
     this.scene.add(this.fox.group);
     const pw = document.createElement('div');
     pw.style.cssText = 'position:absolute;left:14px;top:58px;display:flex;gap:6px;pointer-events:none;font:800 14px system-ui;color:#fff;text-shadow:0 2px 0 rgba(0,0,0,.35)';
@@ -147,6 +150,17 @@ export class Game {
       this.chasers.push(r.group);
       this.raccoons.push(r);
     }
+    loadRaccoonGLB().then((src) => {
+      if (!src) return;
+      this.chasers.forEach((g, i) => {
+        // swap the code-built body for the Tripo model, keep the group (position/visibility logic)
+        g.clear();
+        g.scale.setScalar(1);
+        const inst = raccoonInstance(src, i * 0.33);
+        g.add(inst.root);
+        this.raccoonMixers[i] = inst.mixer;
+      });
+    });
 
     // dizzy stars ring and ghost sheet for crash animations
     this.stars = new THREE.Group();
@@ -256,21 +270,32 @@ export class Game {
     const n = Math.max(0, Math.min(2, this.lane + d));
     if (n !== this.lane) { this.lane = n; this.sfx('swipe'); }
   }
+  /** Jump/slide pressed slightly early (just before landing) still count. */
+  private jumpBuf = 0;
+  private slideBuf = 0;
   jump() {
-    if (this.state !== 'run' || this.y > 0.01) return;
-    this.vy = JUMP_V; this.slideT = 0; this.sfx('jump');
+    if (this.state !== 'run') return;
+    if (this.y > 0.01) { this.jumpBuf = 0.16; return; }
+    this.doJump();
+  }
+  private doJump() {
+    this.vy = JUMP_V; this.slideT = 0; this.jumpBuf = 0; this.sfx('jump');
   }
   slide() {
     if (this.state !== 'run') return;
-    if (this.y > 0.01) this.vy = -JUMP_V; // fast-fall
+    if (this.y > 0.01) { this.vy = Math.min(this.vy, -JUMP_V * 1.2); this.slideBuf = 0.3; return; } // fast-fall, slide on landing
     this.slideT = SLIDE_TIME; this.sfx('swipe', 0.8);
   }
 
   // ---- loop
+  /** Set while a full-screen overlay hides the game. */
+  hold = false;
+
   private loop(now: number) {
     requestAnimationFrame((t) => this.loop(t));
     const dt = Math.min(0.1, (now - this.last) / 1000 || 0);
     this.last = now;
+    if (this.hold) return; // full-screen overlay (story intro) covers the canvas: save the GPU/battery
     this.acc += dt;
     const step = 1 / 60;
     while (this.acc >= step) { this.update(step); this.acc -= step; }
@@ -318,9 +343,18 @@ export class Game {
     // fox motion
     const tx = LANES[this.lane];
     this.x += (tx - this.x) * Math.min(1, dt * 14);
-    this.vy -= GRAVITY * (this.floatT > 0 ? 0.5 : 1) * dt;
+    // snappier arc: lighter going up, heavier coming down; float pickup halves it
+    const gMul = (this.vy > 0 ? 0.85 : 1.35) * (this.floatT > 0 ? 0.5 : 1);
+    this.vy -= GRAVITY * gMul * dt;
     this.y += this.vy * dt;
-    if (this.y <= 0) { if (this.y < -0.001 && this.vy < -6) this.sfx('land'); this.y = 0; this.vy = 0; }
+    if (this.jumpBuf > 0) this.jumpBuf -= dt;
+    if (this.slideBuf > 0) this.slideBuf -= dt;
+    if (this.y <= 0) {
+      if (this.y < -0.001 && this.vy < -6) this.sfx('land');
+      this.y = 0; this.vy = 0;
+      if (this.jumpBuf > 0) this.doJump();
+      else if (this.slideBuf > 0) { this.slideBuf = 0; this.slideT = SLIDE_TIME; this.sfx('swipe', 0.8); }
+    }
     if (this.slideT > 0) this.slideT -= dt;
     const sliding = this.slideT > 0 && this.y < 0.05;
     this.fox.group.position.set(this.x, this.y, 0);
@@ -334,7 +368,7 @@ export class Game {
       if (cz - 45 > 0 || cz < -45) continue;
       for (const o of c.obstacles) {
         const z = cz + o.z;
-        if (o.hit || Math.abs(z) > o.depth / 2 + 0.5) continue;
+        if (o.hit || Math.abs(z) > o.depth / 2 + 0.35) continue; // ~fox half-depth, a touch forgiving
         if (o.lane !== this.nearestLane()) continue;
         let hit = false;
         if (o.kind === 'chimney') hit = true;
@@ -449,8 +483,8 @@ export class Game {
       this.sheet.position.y = 0.9 + Math.abs(Math.sin(t * 8)) * 0.12;
       this.sheet.rotation.z = Math.sin(t * 10) * 0.12;
     } else {
-      f.group.rotation.z = Math.min(1.4, t * 5);
-      f.group.position.y = Math.max(0, 0.5 - t);
+      if (f.has('fall')) { f.act('fall', dt); f.group.position.y = Math.max(0, f.group.position.y - dt * 4); }
+      else { f.group.rotation.z = Math.min(1.4, t * 5); f.group.position.y = Math.max(0, 0.5 - t); }
       this.stars.position.set(f.group.position.x, 2.6, 0);
       this.stars.children.forEach((s) => {
         const a = s.userData.a + t * 5;
@@ -468,7 +502,10 @@ export class Game {
       const z = this.chaseGap + 2 + (i === 1 ? 0.8 : 0);
       c.position.set(LANES[i] * 0.8 + Math.sin(this.time * 3 + i) * 0.2, Math.abs(Math.sin(this.time * 10 + i)) * 0.2, Math.min(z, 18));
       c.visible = z < 16;
-      if (c.visible) animateRaccoon(this.raccoons[i], this.time, i * 2.1);
+      if (c.visible) {
+        const mx = this.raccoonMixers[i];
+        if (mx) mx.update(1 / 60); else animateRaccoon(this.raccoons[i], this.time, i * 2.1);
+      }
     });
   }
 
