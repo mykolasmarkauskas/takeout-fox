@@ -12,8 +12,8 @@ export interface KitSpec { url: string; fit: 'height' | 'width' | 'depth'; size:
 
 export const KIT: Record<string, KitSpec> = {
   bld_noodle: { url: 'models/bld_noodle.glb', fit: 'height', size: 6.2 },
-  bld_teal: { url: 'models/bld_teal.glb', fit: 'height', size: 5.2 },
-  bld_tower: { url: 'models/bld_tower.glb', fit: 'height', size: 7.4 },
+  bld_teal: { url: 'models/bld_teal.glb', fit: 'height', size: 5.6 },
+  bld_tower: { url: 'models/bld_tower.glb', fit: 'height', size: 6.4 },
   chimney: { url: 'models/chimney.glb', fit: 'height', size: 3.6 },
   crate: { url: 'models/crate.glb', fit: 'width', size: 1.75 },
   laundry: { url: 'models/laundry.glb', fit: 'width', size: 2.4 },
