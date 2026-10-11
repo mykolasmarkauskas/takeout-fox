@@ -67,7 +67,6 @@ export class Game {
   readonly audio = new Audio();
   private chasers: THREE.Group[] = [];
   private quipT = 12;
-  private slideHints = 0;
   private raccoons: Raccoon[] = [];
   private raccoonMixers: (THREE.AnimationMixer | null)[] = [];
   private stars: THREE.Group;
@@ -415,16 +414,12 @@ export class Game {
       if (cz - 45 > 0 || cz < -45) continue;
       for (const o of c.obstacles) {
         const z = cz + o.z;
-        if (o.kind === 'laundry' && !o.hit && z < -8 && z > -16 && !(o as { hinted?: boolean }).hinted && this.slideHints < 3) {
-          (o as { hinted?: boolean }).hinted = true; this.slideHints++;
-          this.say(matchMedia('(pointer: coarse)').matches ? 'Swipe ↓ to slide under!' : 'Press ↓ to slide under!', 1500);
-        }
         if (o.hit || Math.abs(z) > o.depth / 2 + 0.35) continue; // ~fox half-depth, a touch forgiving
         if (o.lane !== this.nearestLane()) continue;
         let hit = false;
         if (o.kind === 'chimney') hit = true;
         else if (o.kind === 'crate') hit = this.y < 1.05;
-        else if (o.kind === 'laundry') hit = !sliding;
+        else if (o.kind === 'laundry') hit = !sliding && this.y < 1.2;
         else if (o.kind === 'gap') hit = this.y < 0.15 && Math.abs(z) < o.depth / 2 - 0.3;
         if (hit) {
           o.hit = true;

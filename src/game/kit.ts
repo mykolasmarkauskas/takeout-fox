@@ -8,7 +8,7 @@ import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
  * then cloned cheaply (geometry and materials are shared between clones).
  * Missing files are fine: the world keeps its procedural fallback for that piece.
  */
-export interface KitSpec { url: string; fit: 'height' | 'width' | 'depth'; size: number }
+export interface KitSpec { url: string; fit: 'height' | 'width' | 'depth' | 'max'; size: number }
 
 export const KIT: Record<string, KitSpec> = {
   bld_noodle: { url: 'models/bld_noodle.glb', fit: 'height', size: 6.2 },
@@ -18,6 +18,8 @@ export const KIT: Record<string, KitSpec> = {
   crate: { url: 'models/crate.glb', fit: 'width', size: 1.75 },
   laundry: { url: 'models/laundry.glb', fit: 'width', size: 2.4 },
   lantern: { url: 'models/lantern.glb', fit: 'height', size: 0.85 },
+  boat: { url: 'models/boat.glb', fit: 'max', size: 5.2 },
+  tree: { url: 'models/tree.glb', fit: 'height', size: 4.2 },
 };
 
 const ready = new Map<string, THREE.Object3D>();
@@ -33,7 +35,7 @@ export function loadKit() {
       const root = gltf.scene;
       const box = new THREE.Box3().setFromObject(root);
       const size = new THREE.Vector3(); box.getSize(size);
-      const ref = spec.fit === 'height' ? size.y : spec.fit === 'width' ? size.x : size.z;
+      const ref = spec.fit === 'height' ? size.y : spec.fit === 'width' ? size.x : spec.fit === 'depth' ? size.z : Math.max(size.x, size.z);
       const s = spec.size / ref;
       root.scale.setScalar(s);
       box.setFromObject(root);

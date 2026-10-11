@@ -305,6 +305,7 @@ export class Chunk {
   }
 
   smoke: THREE.Sprite[] = [];
+  boats: THREE.Object3D[] = [];
   private roofA!: THREE.Mesh;
   private roofB!: THREE.Mesh;
   /** Distance (m) at which the player crosses this chunk's local z = 0. */
@@ -344,6 +345,18 @@ export class Chunk {
   }
 
   private boat(x: number, z: number, rnd: () => number) {
+    if (kitHas('boat')) {
+      const b = kitClone('boat')!;
+      const sz = kitSize('boat')!;
+      if (sz.x > sz.z) b.rotation.y = Math.PI / 2; // lie along the quay
+      b.rotation.y += (rnd() - 0.5) * 0.5 + (rnd() < 0.5 ? Math.PI : 0);
+      b.scale.multiplyScalar(0.85 + rnd() * 0.3);
+      b.position.set(x, -2.55, z);
+      b.userData.bob = rnd() * 6;
+      this.dyn.add(b);
+      this.boats.push(b);
+      return;
+    }
     const L = 3.5 + rnd() * 2;
     this.box(1.5, 0.8, L, 0.35, M.hull, x, -2.2, z);
     this.box(1.6, 0.18, L + 0.1, 0.08, M.hullTrim, x, -1.78, z);
@@ -354,6 +367,14 @@ export class Chunk {
     this.put(sail.clone(), M.sail, x - 0.05, -1.4, z, 0, Math.PI, 0, 1, 1, -1);
   }
   private tree(x: number, y: number, z: number, k: number, rnd: () => number) {
+    if (kitHas('tree')) {
+      const t = kitClone('tree')!;
+      t.scale.multiplyScalar(k * (0.8 + rnd() * 0.4));
+      t.rotation.y = rnd() * Math.PI * 2;
+      t.position.set(x, y, z);
+      this.dyn.add(t);
+      return;
+    }
     this.put(new THREE.CylinderGeometry(0.14 * k, 0.2 * k, 1.6 * k, 6), M.trunk, x, y + 0.8 * k, z);
     this.put(geo.sphere.clone(), rnd() > 0.5 ? M.leaf : M.leafDark, x, y + 2 * k, z, 0, 0, 0, 2.2 * k, 1.8 * k, 2.2 * k);
     this.put(geo.sphere.clone(), M.leaf, x + 0.5 * k, y + 2.6 * k, z + 0.3 * k, 0, 0, 0, 1.4 * k, 1.2 * k, 1.4 * k);
@@ -362,6 +383,7 @@ export class Chunk {
 
   /** Drift chimney smoke upward (call every frame with the world clock). */
   animateSmoke(time: number) {
+    for (const b of this.boats) { const ph = b.userData.bob as number; b.position.y = -2.55 + Math.sin(time * 1.3 + ph) * 0.08; b.rotation.z = Math.sin(time * 1.1 + ph) * 0.04; }
     for (const sp of this.smoke) {
       const u = sp.userData as { x: number; y: number; z: number; ph: number };
       const f = (time * 0.35 + u.ph) % 1;
@@ -384,6 +406,7 @@ export class Chunk {
     this.pickups = [];
 
     this.smoke = [];
+    this.boats = [];
     const mid = this.themeAt(-CHUNK_LEN / 2, () => 0.5);
     this.roofA.material = mid.roof[0];
     this.roofB.material = mid.roof[1];
@@ -507,8 +530,9 @@ export class Chunk {
         this.addObstacle('crate', lane, base);
         this.addCoinArc(lane, base);
       } else if (r < 0.7) {
-        for (let l = 0; l < 3; l++) this.addObstacle('laundry', l, base);
-        this.addCoinLine(1, base - 5, 4, 1);
+        // washing line across one lane only: dodge it, hop it or slide under, whatever feels right
+        this.addObstacle('laundry', lane, base);
+        this.addCoinLine((lane + 1 + Math.floor(rnd() * 2)) % 3, base - 4, 5, 1);
       } else if (r < 0.88 + d * 0.05) {
         for (let l = 0; l < 3; l++) this.addObstacle('gap', l, base);
         this.addCoinArc(1, base);
@@ -563,7 +587,7 @@ export class Chunk {
     const add = (mesh: THREE.Mesh, x: number, y: number, zz: number) => { mesh.position.set(x, y, zz); mesh.userData.own = true; mesh.receiveShadow = true; g.add(mesh); return mesh; };
     let depth = 1;
     if (kind === 'laundry' && kitHas(kind)) {
-      // raised so the washing hangs at head height: run into it, or slide underneath
+      // one-lane washing line at head height: dodge, jump or slide under it
       const l = kitClone(kind)!;
       l.scale.multiplyScalar(1.3);
       l.position.y = 0.45;
