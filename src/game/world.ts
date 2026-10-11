@@ -83,7 +83,7 @@ const rbox = (w: number, h: number, d: number, r: number, m: THREE.Material) => 
   return mesh;
 };
 const geo = {
-  coin: new THREE.CylinderGeometry(0.34, 0.34, 0.1, 24),
+  coin: new THREE.CylinderGeometry(0.36, 0.36, 0.12, 32),
   coinRim: new THREE.TorusGeometry(0.31, 0.04, 8, 24),
   lantern: new THREE.SphereGeometry(0.3, 16, 12),
   cap: new THREE.CylinderGeometry(0.12, 0.12, 0.06, 10),
@@ -110,6 +110,78 @@ const pickMat = (k: PickupKind) => {
   return new THREE.SpriteMaterial({ map: pickTex[k], transparent: true, fog: false });
 };
 export interface Coin { lane: number; z: number; mesh: THREE.Mesh; taken: boolean }
+
+/** Coin face: warm gold with an embossed noodle-bowl emblem, notched rim (drawn once on a canvas). */
+function coinFace() {
+  const S = 256, c = document.createElement('canvas');
+  c.width = c.height = S;
+  const g = c.getContext('2d')!;
+  const R = S / 2;
+  let gr = g.createRadialGradient(R * 0.8, R * 0.7, 10, R, R, R);
+  gr.addColorStop(0, '#fff2a8'); gr.addColorStop(0.55, '#ffc93a'); gr.addColorStop(1, '#e09412');
+  g.fillStyle = gr; g.beginPath(); g.arc(R, R, R, 0, Math.PI * 2); g.fill();
+  // notched rim
+  g.strokeStyle = '#b86a08'; g.lineWidth = 14; g.beginPath(); g.arc(R, R, R - 9, 0, Math.PI * 2); g.stroke();
+  g.strokeStyle = '#ffe48a'; g.lineWidth = 3;
+  for (let i = 0; i < 48; i++) { const a = (i / 48) * Math.PI * 2; g.beginPath(); g.moveTo(R + Math.cos(a) * (R - 15), R + Math.sin(a) * (R - 15)); g.lineTo(R + Math.cos(a) * (R - 3), R + Math.sin(a) * (R - 3)); g.stroke(); }
+  g.strokeStyle = '#c97a0c'; g.lineWidth = 4; g.beginPath(); g.arc(R, R, R - 24, 0, Math.PI * 2); g.stroke();
+  // emblem: noodle bowl with chopsticks and steam
+  const ink = '#a85a06', hi = '#ffe9a0';
+  g.lineCap = 'round'; g.lineJoin = 'round';
+  g.fillStyle = ink;
+  g.beginPath(); g.moveTo(R - 62, R + 4); g.lineTo(R + 62, R + 4); g.quadraticCurveTo(R + 58, R + 66, R, R + 70); g.quadraticCurveTo(R - 58, R + 66, R - 62, R + 4); g.fill();
+  g.fillRect(R - 24, R + 66, 48, 10);
+  g.strokeStyle = hi; g.lineWidth = 5; g.beginPath(); g.moveTo(R - 44, R + 20); g.quadraticCurveTo(R - 36, R + 46, R - 12, R + 56); g.stroke();
+  g.strokeStyle = ink; g.lineWidth = 8;
+  g.beginPath(); g.moveTo(R + 8, R - 2); g.lineTo(R + 58, R - 62); g.stroke();
+  g.beginPath(); g.moveTo(R + 22, R - 2); g.lineTo(R + 72, R - 54); g.stroke();
+  g.lineWidth = 6;
+  for (const dx of [-36, -12, 12]) { g.beginPath(); g.moveTo(R + dx, R - 8); g.bezierCurveTo(R + dx - 12, R - 24, R + dx + 12, R - 34, R + dx, R - 52); g.stroke(); }
+  const t = new THREE.CanvasTexture(c);
+  t.colorSpace = THREE.SRGBColorSpace;
+  t.anisotropy = 4;
+  return t;
+}
+const COIN_TEX = coinFace();
+
+/** Hand-painted pun signs along the route, per district. */
+const SIGNS: string[][] = [
+  ['WOK THIS WAY →', 'PHO-NOMENAL NOODLES', 'NO RUNNING ON ROOFS (lol)', 'RACCOONS: PLEASE KNOCK', 'LOST: 1 CHOPSTICK', 'DUMPLING SUPPORT GROUP — TUE', 'HONK IF HANGRY', 'SOUP OF THE DAY: YES', 'TIPS MAKE FOXES FAST', 'CAUTION: SPICY ZONE'],
+  ['FISH & TIPS', 'THE KRAKEN IS ON BREAK', 'SEAGULLS ARE NOT WAITERS', 'BOATS: NO DELIVERY', 'SHRIMPLY THE BEST', 'ANCHOVY? AN-CHO-VERY!', 'DO NOT FEED THE CAPTAIN'],
+  ['PLEASE DON\'T EAT THE BONSAI', 'THIS HEDGE IS ON A DIET', 'SNAIL LANE (SLOW)', 'LETTUCE PASS', 'BEE-HAVE YOURSELF', 'GRASS IS GREENER → HERE', 'WEED IT AND REAP'],
+];
+const signTex = new Map<string, THREE.Texture>();
+function signTexture(text: string) {
+  let t = signTex.get(text);
+  if (t) return t;
+  const W = 512, H = 200, c = document.createElement('canvas');
+  c.width = W; c.height = H;
+  const g = c.getContext('2d')!;
+  g.fillStyle = '#7a4a2a'; g.fillRect(0, 0, W, H);
+  g.fillStyle = '#f4dfb8'; g.fillRect(12, 12, W - 24, H - 24);
+  g.strokeStyle = 'rgba(122,74,42,.25)'; g.lineWidth = 2;
+  for (let y = 40; y < H - 12; y += 34) { g.beginPath(); g.moveTo(14, y); g.lineTo(W - 14, y); g.stroke(); } // planks
+  g.fillStyle = '#7b2a18';
+  g.textAlign = 'center'; g.textBaseline = 'middle';
+  const words = text.split(' ');
+  let size = 64, lines: string[] = [];
+  do { // fit in at most 2 lines
+    g.font = `900 ${size}px system-ui, sans-serif`;
+    lines = []; let cur = '';
+    for (const w of words) { const n = cur ? cur + ' ' + w : w; if (g.measureText(n).width > W - 60 && cur) { lines.push(cur); cur = w; } else cur = n; }
+    lines.push(cur); size -= 4;
+  } while ((lines.length > 2 || lines.some((l) => g.measureText(l).width > W - 60)) && size > 22);
+  lines.forEach((l, i) => g.fillText(l, W / 2, H / 2 + (i - (lines.length - 1) / 2) * (size + 8)));
+  t = new THREE.CanvasTexture(c);
+  t.colorSpace = THREE.SRGBColorSpace; t.anisotropy = 4;
+  signTex.set(text, t);
+  return t;
+}
+const signFace = new Map<string, THREE.Material>();
+const signWood = new THREE.MeshStandardMaterial({ color: 0x7a4a2a, roughness: 0.8 });
+const signGeo = new THREE.BoxGeometry(2.4, 0.94, 0.08);
+const coinFaceMat = new THREE.MeshPhysicalMaterial({ map: COIN_TEX, bumpMap: COIN_TEX, bumpScale: 2.5, emissive: 0x6a3d00, emissiveIntensity: 0.25, roughness: 0.32, metalness: 0.6, clearcoat: 0.8, clearcoatRoughness: 0.15 });
+const coinEdgeMat = new THREE.MeshPhysicalMaterial({ color: 0xe9a21c, emissive: 0x6a3d00, emissiveIntensity: 0.25, roughness: 0.3, metalness: 0.65, clearcoat: 0.8 });
 
 const _m = new THREE.Matrix4(), _q = new THREE.Quaternion(), _e = new THREE.Euler(), _v = new THREE.Vector3(), _s = new THREE.Vector3(1, 1, 1);
 
@@ -399,6 +471,21 @@ export class Chunk {
         }
       }
     }
+    // a funny sign on a post at the curb, now and then
+    if (rnd() < 0.45) {
+      const sd = rnd() < 0.5 ? -1 : 1, sz = -6 - rnd() * (CHUNK_LEN - 12);
+      const th = THEMES.indexOf(this.themeAt(sz, rnd));
+      const list = SIGNS[th] ?? SIGNS[0];
+      const text = list[Math.floor(rnd() * list.length)];
+      let face = signFace.get(text);
+      if (!face) signFace.set(text, (face = new THREE.MeshStandardMaterial({ map: signTexture(text), roughness: 0.75 })));
+      const board = new THREE.Mesh(signGeo, [signWood, signWood, signWood, signWood, face, signWood]);
+      board.position.set(sd * 4.25, 2.6, sz);
+      board.rotation.y = -sd * 0.45;
+      board.castShadow = true;
+      this.dyn.add(board);
+      this.put(new THREE.CylinderGeometry(0.07, 0.09, 2.3, 6), M.pole, sd * 4.25, 1.15, sz);
+    }
     // a garland strung across the street between two posts, roughly one every ~100 m
     if (rnd() < 0.4) { const gz = -8 - rnd() * 24; this.garland(gz, rnd, this.themeAt(gz, rnd)); }
     this.flush();
@@ -463,12 +550,8 @@ export class Chunk {
     }
   }
   private addCoin(lane: number, z: number, y: number) {
-    const m = new THREE.Mesh(geo.coin, M.coin);
+    const m = new THREE.Mesh(geo.coin, [coinEdgeMat, coinFaceMat, coinFaceMat]);
     m.castShadow = true;
-    const rim = new THREE.Mesh(geo.coinRim, M.coin);
-    m.add(rim);
-    rim.position.y = 0;
-    rim.rotation.x = Math.PI / 2;
     m.rotation.x = Math.PI / 2;
     m.position.set(LANES[lane], y, z);
     this.dyn.add(m);
@@ -479,7 +562,15 @@ export class Chunk {
     const g = new THREE.Group();
     const add = (mesh: THREE.Mesh, x: number, y: number, zz: number) => { mesh.position.set(x, y, zz); mesh.userData.own = true; mesh.receiveShadow = true; g.add(mesh); return mesh; };
     let depth = 1;
-    if ((kind === 'chimney' || kind === 'crate' || kind === 'laundry') && kitHas(kind)) {
+    if (kind === 'laundry' && kitHas(kind)) {
+      // raised so the washing hangs at head height: run into it, or slide underneath
+      const l = kitClone(kind)!;
+      l.scale.multiplyScalar(1.3);
+      l.position.y = 0.45;
+      g.add(l);
+      for (const sx of [-1, 1]) add(new THREE.Mesh(new THREE.CylinderGeometry(0.11, 0.13, 0.6, 8), M.pole), sx * 1.45, 0.3, 0).castShadow = true;
+      depth = 0.3;
+    } else if ((kind === 'chimney' || kind === 'crate') && kitHas(kind)) {
       g.add(kitClone(kind)!);
       depth = kind === 'chimney' ? 1.5 : kind === 'crate' ? 1.4 : 0.3;
     } else if (kind === 'chimney') {

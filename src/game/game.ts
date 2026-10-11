@@ -21,6 +21,15 @@ const BARKS = {
   crate: ['Seeing stars, and tips.', 'Who put that there?'],
   over: ['Order delayed!', 'The Crowd wins this one.'],
 };
+/** Marm's running commentary (text bubbles) and the Crowd's heckles. */
+const QUIPS = [
+  'Extra spicy, extra fast!', 'Note to self: buy a scooter.', 'Five-star delivery, zero-star cardio.',
+  'Is this roof load-bearing?', 'Smells like victory. And garlic.', 'My legs are noodles now.',
+  'Do raccoons even tip?', 'Rooftops: the original shortcut.', 'Keep calm and carry noodles.',
+  'If I drop it, it\'s a salad.', 'Cardio? I prefer "delivery".', 'Grandma Pim would be proud.',
+  'Nobody touches the dumplings.', 'This counts as a workout, right?', 'Who builds a chimney THERE?',
+];
+const HECKLES = ['🦝 Share the noodles!', '🦝 Just ONE bite!', '🦝 We have coupons!', '🦝 Free samples?!', '🦝 Is that extra spicy?', '🦝 We\'re not hangry, YOU\'RE hangry!'];
 const pick = <T,>(a: T[]) => a[Math.floor(Math.random() * a.length)];
 const A = (n: string) => `${import.meta.env.BASE_URL}art/${n}.webp`;
 const DISTRICTS = [
@@ -41,6 +50,8 @@ const GAGS = [
   { img: 'gag_01_chimney_therapy', cap: 'Meanwhile, at Chimney Therapy...' },
   { img: 'gag_02_pigeon_union', cap: 'Meanwhile, the Pigeon Union votes...' },
   { img: 'gag_03_raccoon_mirror', cap: 'Meanwhile, the Crowd rehearses menace...' },
+  { img: 'gag_04_noodle_meeting', cap: 'Meanwhile, inside the box, the noodles hold a meeting...' },
+  { img: 'gag_05_seagull', cap: 'Meanwhile, a seagull tries to order takeout...' },
 ];
 const GAG_FREEZE = 2.6; // seconds the cutaway holds the game
 const GAG_GRACE = 1.2;  // invulnerable seconds after it ends
@@ -55,6 +66,8 @@ export class Game {
   readonly fox = new FoxActor();
   readonly audio = new Audio();
   private chasers: THREE.Group[] = [];
+  private quipT = 12;
+  private slideHints = 0;
   private raccoons: Raccoon[] = [];
   private raccoonMixers: (THREE.AnimationMixer | null)[] = [];
   private stars: THREE.Group;
@@ -259,6 +272,7 @@ export class Game {
   }
 
   start() {
+    this.paused = false; this.audio.pausedByGame = false;
     this.audio.unlock();
     this.resetRun();
     this.state = 'run';
@@ -271,7 +285,7 @@ export class Game {
 
   // ---- input
   moveLane(d: number) {
-    if (this.state !== 'run') return;
+    if (this.state !== 'run' || this.paused) return;
     const n = Math.max(0, Math.min(2, this.lane + d));
     if (n !== this.lane) { this.lane = n; this.sfx('swipe'); }
   }
@@ -279,7 +293,7 @@ export class Game {
   private jumpBuf = 0;
   private slideBuf = 0;
   jump() {
-    if (this.state !== 'run') return;
+    if (this.state !== 'run' || this.paused) return;
     if (this.y > 0.01) { this.jumpBuf = 0.16; return; }
     this.doJump();
   }
@@ -287,7 +301,7 @@ export class Game {
     this.vy = JUMP_V; this.slideT = 0; this.jumpBuf = 0; this.sfx('jump');
   }
   slide() {
-    if (this.state !== 'run') return;
+    if (this.state !== 'run' || this.paused) return;
     if (this.y > 0.01) { this.vy = Math.min(this.vy, -JUMP_V * 1.2); this.slideBuf = 0.3; return; } // fast-fall, slide on landing
     this.slideT = SLIDE_TIME; this.sfx('swipe', 0.8);
   }
@@ -296,11 +310,36 @@ export class Game {
   /** Set while a full-screen overlay hides the game. */
   hold = false;
 
+  /** Pause menu open: nothing moves, the frame stays on screen. */
+  paused = false;
+  pause() {
+    if (this.paused || (this.state !== 'run' && this.state !== 'crash')) return false;
+    this.paused = true;
+    this.audio.pausedByGame = true; this.audio.suspend();
+    return true;
+  }
+  resume() {
+    if (!this.paused) return;
+    this.paused = false;
+    this.audio.pausedByGame = false; this.audio.resume();
+  }
+  /** Leave the run and go back to the title screen. */
+  toMenu() {
+    this.paused = false;
+    this.audio.pausedByGame = false; this.audio.resume();
+    this.audio.stopMusic();
+    this.resetRun();
+    this.state = 'menu';
+    this.ui.over.classList.add('hidden');
+    this.ui.card.classList.remove('on');
+    this.ui.menu.classList.remove('hidden');
+  }
+
   private loop(now: number) {
     requestAnimationFrame((t) => this.loop(t));
     const dt = Math.min(0.1, (now - this.last) / 1000 || 0);
     this.last = now;
-    if (this.hold) return; // full-screen overlay (story intro) covers the canvas: save the GPU/battery
+    if (this.hold || this.paused) return; // full-screen overlay (story intro) covers the canvas: save the GPU/battery
     this.acc += dt;
     const step = 1 / 60;
     while (this.acc >= step) { this.update(step); this.acc -= step; }
@@ -367,7 +406,7 @@ export class Game {
     this.fox.group.position.set(this.x, this.y, 0);
     this.fox.group.rotation.z = (tx - this.x) * -0.08;
     this.fox.animate(this.time, dt, this.speed / MAX_SPEED, this.y > 0.05, sliding);
-    this.fox.body.scale.y = sliding ? 0.75 : 1;
+    this.fox.body.scale.y = 1;
 
     // collisions
     for (const c of this.world.chunks) {
@@ -375,6 +414,10 @@ export class Game {
       if (cz - 45 > 0 || cz < -45) continue;
       for (const o of c.obstacles) {
         const z = cz + o.z;
+        if (o.kind === 'laundry' && !o.hit && z < -8 && z > -16 && !(o as { hinted?: boolean }).hinted && this.slideHints < 3) {
+          (o as { hinted?: boolean }).hinted = true; this.slideHints++;
+          this.say(matchMedia('(pointer: coarse)').matches ? 'Swipe ↓ to slide under!' : 'Press ↓ to slide under!', 1500);
+        }
         if (o.hit || Math.abs(z) > o.depth / 2 + 0.35) continue; // ~fox half-depth, a touch forgiving
         if (o.lane !== this.nearestLane()) continue;
         let hit = false;
@@ -409,6 +452,11 @@ export class Game {
 
     // chasers recover gap
     this.chaseGap = Math.min(14, this.chaseGap + dt * 2.2);
+    // a quip every ~15-25 s; the Crowd heckles when it's close behind
+    if ((this.quipT -= dt) <= 0 && this.bubbleT <= 0) {
+      this.quipT = 15 + Math.random() * 10;
+      this.say(this.chaseGap < 7 ? pick(HECKLES) : pick(QUIPS), 2200);
+    }
     this.updateChasers();
     this.updateHud();
   }
@@ -524,6 +572,7 @@ export class Game {
     this.ui.overTitle.textContent = overLine;
     this.audio.voice(overLine);
     this.ui.overText.textContent = `${Math.floor(this.distance)} m  ·  ${this.coins} tips  ·  score ${this.score()}`;
+    this.onOver?.(this.score(), this.distance, this.coins);
     this.ui.over.classList.remove('hidden');
     this.stars.visible = false;
     try {
@@ -532,6 +581,8 @@ export class Game {
     } catch { /* storage may be unavailable */ }
   }
 
+  /** UI hook: a run just ended (score, metres, tips). */
+  onOver: ((score: number, dist: number, tips: number) => void) | null = null;
   score() { return Math.floor(this.distance * (1 + this.coins * 0.02)); }
 
   private updateHud() {

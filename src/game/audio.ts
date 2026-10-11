@@ -28,6 +28,20 @@ export class Audio {
   private voiceGain: GainNode | null = null;
   private loading: Promise<void> | null = null;
   muted = false;
+  /** User volume settings 0..1 (applied on top of the mix levels). */
+  vol = { music: 0.8, sfx: 0.8, voice: 1 };
+  private readonly MUSIC = 0.35;
+  setVolumes(v: Partial<{ music: number; sfx: number; voice: number }>) {
+    Object.assign(this.vol, v);
+    if (!this.ctx) return;
+    const t = this.ctx.currentTime;
+    this.musicGain!.gain.setTargetAtTime(this.MUSIC * this.vol.music, t, 0.05);
+    this.sfxGain!.gain.setTargetAtTime(0.9 * this.vol.sfx, t, 0.05);
+    this.voiceGain!.gain.setTargetAtTime(1.0 * this.vol.voice, t, 0.05);
+  }
+  /** Freeze/unfreeze every sound (pause menu, tab hidden). */
+  suspend() { if (this.ctx && this.ctx.state === 'running') this.ctx.suspend(); }
+  resume() { if (this.ctx && this.ctx.state === 'suspended') this.ctx.resume(); }
 
   /** Call from a user gesture (first tap or key). */
   unlock() {
@@ -35,18 +49,19 @@ export class Audio {
       const AC = window.AudioContext || (window as any).webkitAudioContext;
       this.ctx = new AC();
       this.musicGain = this.ctx.createGain();
-      this.musicGain.gain.value = 0.35;
+      this.musicGain.gain.value = this.MUSIC * this.vol.music;
       this.musicGain.connect(this.ctx.destination);
       this.sfxGain = this.ctx.createGain();
-      this.sfxGain.gain.value = 0.9;
+      this.sfxGain.gain.value = 0.9 * this.vol.sfx;
       this.sfxGain.connect(this.ctx.destination);
       this.voiceGain = this.ctx.createGain();
-      this.voiceGain.gain.value = 1.0;
+      this.voiceGain.gain.value = this.vol.voice;
       this.voiceGain.connect(this.ctx.destination);
       this.loading = this.loadAll();
     }
-    if (this.ctx.state === 'suspended') this.ctx.resume();
+    if (this.ctx.state === 'suspended' && !this.pausedByGame) this.ctx.resume();
   }
+  pausedByGame = false;
 
   private async load(path: string) {
     try {
@@ -88,8 +103,8 @@ export class Audio {
     // duck the music under the line so speech stays clear
     const g = this.musicGain!.gain, t = this.ctx.currentTime;
     g.cancelScheduledValues(t);
-    g.setTargetAtTime(0.12, t, 0.03);
-    g.setTargetAtTime(0.35, t + b.duration + 0.1, 0.25);
+    g.setTargetAtTime(0.12 * this.vol.music, t, 0.03);
+    g.setTargetAtTime(this.MUSIC * this.vol.music, t + b.duration + 0.1, 0.25);
   }
 
   async startMusic() {

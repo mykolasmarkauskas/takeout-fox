@@ -4,3 +4,4 @@ dist/
 *.log
 .env
 _to_delete/
+takeout-fox-data/
