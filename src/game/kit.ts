@@ -93,3 +93,19 @@ export function kitClone(key: string): THREE.Object3D | null {
 export function kitSize(key: string) { return sizes.get(key) ?? null; }
 export function kitHas(key: string) { return ready.has(key); }
 export function kitKeys(prefix: string) { return [...ready.keys()].filter((k) => k.startsWith(prefix)); }
+
+/** Mesh parts of a kit entry (geometry, material, transform relative to the placed object), for instancing. */
+export interface KitPart { geo: THREE.BufferGeometry; mat: THREE.Material; local: THREE.Matrix4 }
+const partsCache = new Map<string, KitPart[]>();
+export function kitParts(key: string): KitPart[] | null {
+  const src = ready.get(key);
+  if (!src) return null;
+  let p = partsCache.get(key);
+  if (!p) {
+    src.updateMatrixWorld(true);
+    p = [];
+    src.traverse((o) => { if (o instanceof THREE.Mesh) p!.push({ geo: o.geometry, mat: o.material as THREE.Material, local: o.matrixWorld.clone() }); });
+    partsCache.set(key, p);
+  }
+  return p;
+}

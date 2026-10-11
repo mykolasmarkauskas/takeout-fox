@@ -49,6 +49,13 @@ for (const [id, k] of sliders) {
   });
   el.addEventListener('change', () => { if (k === 'sfx') game.audio.play('coin'); if (k === 'voice') game.audio.voice('Order up!'); });
 }
+const saverEl = $('saver') as HTMLInputElement;
+try { saverEl.checked = localStorage.getItem('tf_saver') === '1'; } catch { /* private mode */ }
+game.setSaver(saverEl.checked);
+saverEl.addEventListener('change', () => {
+  game.setSaver(saverEl.checked);
+  try { localStorage.setItem('tf_saver', saverEl.checked ? '1' : '0'); } catch { /* private mode */ }
+});
 const openSettings = () => { game.audio.unlock(); show('settings', true); };
 $('menuSettings').addEventListener('click', (e) => { e.stopPropagation(); click(); openSettings(); });
 $('pauseSettings').addEventListener('click', () => { click(); openSettings(); });

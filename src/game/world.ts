@@ -1,6 +1,7 @@
 import * as THREE from 'three';
 import { RoundedBoxGeometry } from 'three/examples/jsm/geometries/RoundedBoxGeometry.js';
 import { kitClone, kitHas, kitKeys, kitSize } from './kit';
+import { Instancer, type Placed } from './instancer';
 import { PUFF } from './scenery';
 import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
 import { BASE_SPEED, CHUNK_COUNT, CHUNK_LEN, COLORS, GRAVITY, JUMP_V, LANES, MAX_SPEED, ObstacleKind, RECYCLE_Z } from './constants';
@@ -69,7 +70,7 @@ const M = {
   piling: std(0x5e3a26, 0.8), bay: std(0x52b9bd, 0.18, { clearcoat: 0.7, clearcoatRoughness: 0.15 }),
   bulb: new THREE.MeshStandardMaterial({ color: 0xfff1c4, emissive: 0xffd77a, emissiveIntensity: 1.3, roughness: 0.3 }),
   // garden terraces
-  gPaverA: std(0xcfb9a3, 0.85), gPaverB: std(0xc0a993, 0.85), gPaverC: std(0xd9c5b0, 0.85),
+  gPaverA: std(0xc7a486, 0.85), gPaverB: std(0xb59374, 0.85), gPaverC: std(0xd2b293, 0.85),
   gCurb: std(0xe4d6c4, 0.8), lawn: std(0x8cc56a, 0.9), hedge: std(0x6fae5a, 0.9), soil: std(0x8a6a4c, 0.9),
   lanternRed: new THREE.MeshStandardMaterial({ color: 0xd8301f, emissive: 0xff2a10, emissiveIntensity: 1.0, roughness: 0.4 }),
   lanternGold: new THREE.MeshStandardMaterial({ color: 0xff9a1a, emissive: 0xff8a10, emissiveIntensity: 0.95, roughness: 0.4 }),
@@ -137,6 +138,7 @@ function coinFace() {
   c.width = c.height = S;
   const g = c.getContext('2d')!;
   const R = S / 2;
+  g.fillStyle = '#e9a21c'; g.fillRect(0, 0, 10, 10); // edge colour swatch: the coin rim samples this corner
   let gr = g.createRadialGradient(R * 0.8, R * 0.7, 10, R, R, R);
   gr.addColorStop(0, '#fff2a8'); gr.addColorStop(0.55, '#ffc93a'); gr.addColorStop(1, '#e09412');
   g.fillStyle = gr; g.beginPath(); g.arc(R, R, R, 0, Math.PI * 2); g.fill();
@@ -163,6 +165,14 @@ function coinFace() {
   return t;
 }
 const COIN_TEX = coinFace();
+/** One-material coin (rim UVs point at the swatch in the face texture): one draw call per coin, not three. */
+const COIN_GEO = (() => {
+  const g = new THREE.CylinderGeometry(0.36, 0.36, 0.12, 32);
+  const side = g.groups[0], uv = g.attributes.uv as THREE.BufferAttribute, idx = g.index!;
+  for (let i = side.start; i < side.start + side.count; i++) uv.setXY(idx.getX(i), 0.015, 0.985);
+  g.clearGroups();
+  return g;
+})();
 
 /** Hand-painted pun signs along the route, per district. */
 const GATE_NAMES = ['NOODLE ROOFS', 'HARBOUR LIGHTS', 'GARDEN TERRACES'];
@@ -216,7 +226,6 @@ const posterMat = (n: string) => {
   return m;
 };
 const coinFaceMat = new THREE.MeshPhysicalMaterial({ map: COIN_TEX, bumpMap: COIN_TEX, bumpScale: 2.5, emissive: 0x6a3d00, emissiveIntensity: 0.25, roughness: 0.32, metalness: 0.6, clearcoat: 0.8, clearcoatRoughness: 0.15 });
-const coinEdgeMat = new THREE.MeshPhysicalMaterial({ color: 0xe9a21c, emissive: 0x6a3d00, emissiveIntensity: 0.25, roughness: 0.3, metalness: 0.65, clearcoat: 0.8 });
 
 const _m = new THREE.Matrix4(), _q = new THREE.Quaternion(), _e = new THREE.Euler(), _v = new THREE.Vector3(), _s = new THREE.Vector3(1, 1, 1);
 
@@ -226,6 +235,8 @@ export class Chunk {
   coins: Coin[] = [];
   pickups: Pickup[] = [];
   private dyn = new THREE.Group(); // per-use content, rebuilt on recycle
+  /** Static kit copies, drawn by the World's Instancer (one draw call per model part). */
+  placed: Placed[] = [];
   private parts = new Map<THREE.Material, THREE.BufferGeometry[]>();
 
   constructor() {
@@ -461,12 +472,18 @@ export class Chunk {
 
 
   /** Place a kit model; returns it (or null if that model is missing). */
-  private kit(key: string, x: number, y: number, z: number, ry = 0, k = 1) {
+  private kit(key: string, x: number, y: number, z: number, ry = 0, k = 1, live = false) {
     if (!kitHas(key)) return null;
+    if (!live) {
+      const m = new THREE.Matrix4().compose(_v.set(x, y, z), _q.setFromEuler(_e.set(0, ry, 0)), _s.setScalar(k));
+      this.placed.push(Instancer.place(key, m, k));
+      return null;
+    }
     const o = kitClone(key)!;
     o.scale.multiplyScalar(k);
     o.rotation.y = ry;
     o.position.set(x, y, z);
+    o.userData.kit = key;
     this.dyn.add(o);
     return o;
   }
@@ -516,7 +533,7 @@ export class Chunk {
         this.boat(s * (8 + rnd() * 6), z - 3, rnd);
         z -= 6 + rnd() * 3;
       } else {
-        const rb = this.kit('rowboat', s * (6.2 + rnd() * 1.5), -1.78, z - 2, rnd() * Math.PI);
+        const rb = this.kit('rowboat', s * (6.2 + rnd() * 1.5), -1.78, z - 2, rnd() * Math.PI, 1, true);
         if (rb) { rb.userData.bob = rnd() * 6; rb.userData.y0 = -1.78; this.boats.push(rb); }
         z -= 5 + rnd() * 3;
       }
@@ -556,7 +573,7 @@ export class Chunk {
       z -= along * 0.95 + 0.4 + rnd();
     }
     if (s > 0 && rnd() < 0.22) {
-      const b = this.kit('balloon', (10 + rnd() * 25) * (rnd() < 0.5 ? -1 : 1), 22 + rnd() * 14, -CHUNK_LEN / 2, rnd() * 6, 1.2 + rnd() * 0.6);
+      const b = this.kit('balloon', (10 + rnd() * 25) * (rnd() < 0.5 ? -1 : 1), 22 + rnd() * 14, -CHUNK_LEN / 2, rnd() * 6, 1.2 + rnd() * 0.6, true);
       if (b) { b.traverse((o) => { const m = (o as THREE.Mesh).material as THREE.MeshStandardMaterial | undefined; if (m) m.fog = false; }); b.userData.bob = rnd() * 6; b.userData.y0 = b.position.y; b.userData.balloon = true; this.boats.push(b); }
     }
   }
@@ -571,13 +588,25 @@ export class Chunk {
     if (inChunk >= this.startDist && inChunk < this.startDist + CHUNK_LEN && inChunk > 150) {
       const z = -(inChunk - this.startDist), s = slot % 2 ? 1 : -1;
       const far = this.th.far;
-      const opts: [string, string, number, number][] = far === 'sea'
-        ? [['seagull', 'Meanwhile, a seagull tries to order takeout...', 6.4, -1.75]]
+      const opts: [string, string][] = far === 'sea'
+        ? [['seagull', 'Meanwhile, a seagull tries to order takeout...']]
         : far === 'garden'
-          ? [['raccoonmirror', 'Meanwhile, the Crowd rehearses menace...', 6.2, -0.1]]
-          : [['pigeons', 'Meanwhile, the Pigeon Union votes...', 5.6, -0.8], ['chimneytherapy', 'Meanwhile, at Chimney Therapy...', 6.0, -1.0]];
-      const [key, cap, x, y] = opts[slot % opts.length];
-      if (this.kit(key, s * x, y, z, this.facing(s) + 0.35 * s, 1)) this.gags.push({ z, cap });
+          ? [['raccoonmirror', 'Meanwhile, the Crowd rehearses menace...']]
+          : [['pigeons', 'Meanwhile, the Pigeon Union votes...'], ['chimneytherapy', 'Meanwhile, at Chimney Therapy...']];
+      const [key, cap] = opts[slot % opts.length];
+      if (kitHas(key)) {
+        // a little stage by the curb: clear the props around it, a plinth, a warm spotlight glow
+        const gx = s * 5.6;
+        const near = (x: number, zz: number) => Math.sign(x) === s && Math.abs(x - gx) < 4.2 && Math.abs(zz - z) < 4.5;
+        for (const o of [...this.dyn.children]) if (o.userData.kit && near(o.position.x, o.position.z)) this.dyn.remove(o);
+        this.placed = this.placed.filter((p) => !near(p.m.elements[12], p.m.elements[14]));
+        const top = 0.12, plinth = far === 'sea' ? M.plankA : far === 'garden' ? M.gCurb : M.trim;
+        this.put(new THREE.CylinderGeometry(2.0, 2.2, 3, 20), plinth, gx, top - 1.5, z);
+        this.put(new THREE.TorusGeometry(2.05, 0.09, 6, 28), M.bulb, gx, top + 0.02, z, Math.PI / 2);
+        this.kit(key, gx, top, z, this.facing(s) + 0.45 * s, 1);
+        this.glow(gx, 3.2, z, 7, 0xfff0c8);
+        this.gags.push({ z, cap });
+      }
     }
     // posters of the cutaway gags on boards at the curb
     if (rnd() < 0.3) {
@@ -616,11 +645,8 @@ export class Chunk {
   }
   private tree(x: number, y: number, z: number, k: number, rnd: () => number) {
     if (kitHas('tree')) {
-      const t = kitClone('tree')!;
-      t.scale.multiplyScalar(k * (0.8 + rnd() * 0.4));
-      t.rotation.y = rnd() * Math.PI * 2;
-      t.position.set(x, y, z);
-      this.dyn.add(t);
+      const kk = k * (0.8 + rnd() * 0.4);
+      this.kit('tree', x, y, z, rnd() * Math.PI * 2, kk);
       return;
     }
     this.put(new THREE.CylinderGeometry(0.14 * k, 0.2 * k, 1.6 * k, 6), M.trunk, x, y + 0.8 * k, z);
@@ -652,6 +678,7 @@ export class Chunk {
     this.obstacles = [];
     this.coins = [];
     this.pickups = [];
+    this.placed = [];
 
     this.smoke = [];
     this.boats = [];
@@ -757,7 +784,7 @@ export class Chunk {
     }
   }
   private addCoin(lane: number, z: number, y: number) {
-    const m = new THREE.Mesh(geo.coin, [coinEdgeMat, coinFaceMat, coinFaceMat]);
+    const m = new THREE.Mesh(COIN_GEO, coinFaceMat);
     m.rotation.x = Math.PI / 2;
     m.position.set(LANES[lane], y, z);
     this.dyn.add(m);
@@ -841,12 +868,14 @@ export class World {
     return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
   };
 
+  private instancer = new Instancer();
   constructor() {
     for (let i = 0; i < CHUNK_COUNT; i++) {
       const c = new Chunk();
       this.chunks.push(c);
       this.group.add(c.group);
     }
+    this.group.add(this.instancer.group);
     this.reset(1);
   }
 
@@ -860,6 +889,9 @@ export class World {
       this.spawned++;
     });
   }
+
+  /** Write this frame's visible static decoration into the instance buffers. */
+  syncInstances(camera: THREE.Camera) { this.instancer.sync(this.chunks, camera, FOG_END); }
 
   private clock = 0;
   /** Per-frame ambient animation (smoke), independent of scrolling. */
