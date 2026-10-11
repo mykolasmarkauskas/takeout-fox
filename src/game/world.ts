@@ -1,6 +1,7 @@
 import * as THREE from 'three';
 import { RoundedBoxGeometry } from 'three/examples/jsm/geometries/RoundedBoxGeometry.js';
 import { kitClone, kitHas, kitKeys, kitSize } from './kit';
+import { PUFF } from './scenery';
 import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
 import { CHUNK_COUNT, CHUNK_LEN, COLORS, LANES, ObstacleKind, RECYCLE_Z } from './constants';
 
@@ -35,6 +36,17 @@ const M = {
   plant: std(0x3f9a52, 0.6),
   pot: std(0xc0613a, 0.6),
   string: new THREE.MeshBasicMaterial({ color: 0x3a2418 }),
+  paverA: std(0xa58b80, 0.85),
+  paverB: std(0x9a8075, 0.85),
+  paverC: std(0xae9488, 0.85),
+  curb: std(0xc7ab97, 0.8),
+  grout: std(0x6e5248, 0.9),
+  under: new THREE.MeshBasicMaterial({ color: 0x5a3a30 }),
+  roofTileA: std(0x6f4a3c, 0.6),
+  roofTileB: std(0x5e3d32, 0.6),
+  pole: std(0x5a3a28, 0.7),
+  lanternRed: new THREE.MeshStandardMaterial({ color: 0xd8301f, emissive: 0xff2a10, emissiveIntensity: 1.0, roughness: 0.4 }),
+  lanternGold: new THREE.MeshStandardMaterial({ color: 0xff9a1a, emissive: 0xff8a10, emissiveIntensity: 0.95, roughness: 0.4 }),
 };
 const rbox = (w: number, h: number, d: number, r: number, m: THREE.Material) => {
   const mesh = new THREE.Mesh(new RoundedBoxGeometry(w, h, d, 3, Math.min(r, w / 2 - 0.001, h / 2 - 0.001, d / 2 - 0.001)), m);
@@ -82,19 +94,41 @@ export class Chunk {
 
   constructor() {
     this.group.add(this.dyn);
-    // path: rounded stone slabs with thin joints
-    const rows = 10, rl = CHUNK_LEN / rows;
+    const stat = new Map<THREE.Material, THREE.BufferGeometry[]>();
+    const add = (g: THREE.BufferGeometry, m: THREE.Material, x: number, y: number, z: number, rx = 0, rz = 0) => {
+      let gg = g.index ? g.toNonIndexed() : g;
+      for (const k of Object.keys(gg.attributes)) if (k !== 'position' && k !== 'normal' && k !== 'uv') gg.deleteAttribute(k);
+      gg = gg.applyMatrix4(_m.compose(_v.set(x, y, z), _q.setFromEuler(_e.set(rx, 0, rz)), _s.set(1, 1, 1)));
+      (stat.get(m) ?? stat.set(m, []).get(m)!).push(gg);
+    };
+    // path: big stone pavers in staggered rows, like the key art
+    const rows = 20, rl = CHUNK_LEN / rows, mats = [M.paverA, M.paverB, M.paverC];
+    let n = 0;
     for (let i = 0; i < rows; i++) {
-      const t = rbox(7.5, 0.4, rl - 0.08, 0.1, i % 2 ? M.path : M.pathAlt);
-      t.position.set(0, -0.2, -(i + 0.5) * rl);
-      t.castShadow = false; t.receiveShadow = true;
-      this.group.add(t);
+      const widths = i % 2 ? [1.25, 2.45, 2.45, 1.25] : [2.45, 2.5, 2.45];
+      let x = -3.7;
+      for (const w of widths) {
+        add(new RoundedBoxGeometry(w - 0.08, 0.4, rl - 0.08, 2, 0.07), mats[(n++ * 7 + i) % 3], x + w / 2, -0.2, -(i + 0.5) * rl);
+        x += w;
+      }
     }
-    // parapets with a rounded cap
-    for (const s of [-1, 1]) {
-      const w = rbox(0.6, 0.9, CHUNK_LEN - 0.1, 0.22, M.wallPlaster);
-      w.position.set(4.2 * s, 0.25, -CHUNK_LEN / 2);
-      this.group.add(w);
+    // grout bed under the pavers, and a dark "town below" floor so the sky never shows through
+    add(new THREE.BoxGeometry(8.2, 0.3, CHUNK_LEN), M.grout, 0, -0.32, -CHUNK_LEN / 2);
+    add(new THREE.PlaneGeometry(60, CHUNK_LEN), M.under, 0, -4.2, -CHUNK_LEN / 2, -Math.PI / 2);
+    // stone curbs in blocks on both edges
+    for (const sd of [-1, 1]) {
+      for (let i = 0; i < 20; i++) add(new RoundedBoxGeometry(0.75, 0.6, rl - 0.1, 2, 0.12), M.curb, 4.1 * sd, 0.1, -(i + 0.5) * rl);
+      // roofs sloping away from the ridge path: courses of rounded clay tiles
+      for (let k = 0; k < 6; k++) {
+        const t = k / 5;
+        add(new THREE.CapsuleGeometry(0.32, CHUNK_LEN - 0.7, 2, 8), k % 2 ? M.roofTileB : M.roofTileA, sd * (4.75 + t * 2.6), -0.35 - t * 1.9, -CHUNK_LEN / 2, Math.PI / 2, 0);
+      }
+    }
+    for (const [m, list] of stat) {
+      const mesh = new THREE.Mesh(mergeGeometries(list, false)!, m);
+      mesh.receiveShadow = true; mesh.castShadow = m === M.curb;
+      this.group.add(mesh);
+      list.forEach((g) => g.dispose());
     }
   }
 
@@ -129,10 +163,10 @@ export class Chunk {
     this.parts.clear();
   }
 
-  private building(s: number, z: number, w: number, h: number, len: number, rnd: () => number) {
+  private building(s: number, z: number, w: number, h: number, len: number, rnd: () => number, near = 5.2, base = -1.4) {
     const wallM = rnd() > 0.5 ? M.roof : M.wallPlaster;
-    const roofM = rnd() > 0.5 ? M.tile : M.tileTeal;
-    const cx = (5.2 + w / 2) * s, cz = z - len / 2, face = 5.2 * s, base = -1.4;
+    const roofM = rnd() > 0.7 ? M.tileTeal : M.tile;
+    const cx = (near + w / 2) * s, cz = z - len / 2, face = near * s;
     // body
     this.box(w, h, len, 0.35, wallM, cx, base + h / 2, cz);
     // layered curved roof: wide slab + upturned eave corners + ridge
@@ -165,6 +199,39 @@ export class Chunk {
     }
   }
 
+  smoke: THREE.Sprite[] = [];
+
+  private garland(z: number, rnd: () => number) {
+    const hl = 5.6 + rnd() * 0.8, hr = 5.6 + rnd() * 0.8, sag = 1.1 + rnd() * 0.5;
+    for (const [sd, h] of [[-1, hl], [1, hr]] as const) {
+      this.put(new THREE.CylinderGeometry(0.09, 0.12, h + 0.6, 8), M.pole, 4.1 * sd, h / 2 + 0.1, z);
+      this.put(new THREE.SphereGeometry(0.14, 8, 6), M.pole, 4.1 * sd, h + 0.45, z);
+    }
+    const pt = (u: number) => new THREE.Vector3(-4.1 + 8.2 * u, hl + (hr - hl) * u - sag * 4 * u * (1 - u), z);
+    const curve = new THREE.CatmullRomCurve3([0, 0.25, 0.5, 0.75, 1].map(pt));
+    this.put(new THREE.TubeGeometry(curve, 24, 0.025, 4, false), M.string, 0, 0, 0);
+    const nl = 7;
+    for (let i = 1; i <= nl; i++) {
+      const p = pt(i / (nl + 1));
+      const m = i % 3 === 1 ? M.lanternGold : M.lanternRed;
+      this.put(geo.lantern, m, p.x, p.y - 0.5, p.z, 0, 0, 0, 1.15, 1.35, 1.15, false);
+      this.put(geo.cap, M.lanternCap, p.x, p.y - 0.12, p.z, 0, 0, 0, 0.9, 1, 0.9, false);
+      this.put(geo.cap, M.lanternCap, p.x, p.y - 0.92, p.z, 0, 0, 0, 1.1, 1, 1.1, false);
+    }
+  }
+
+  /** Drift chimney smoke upward (call every frame with the world clock). */
+  animateSmoke(time: number) {
+    for (const sp of this.smoke) {
+      const u = sp.userData as { x: number; y: number; z: number; ph: number };
+      const f = (time * 0.35 + u.ph) % 1;
+      sp.position.set(u.x + f * 1.6, u.y + f * 5.5, u.z - f * 0.6);
+      const sc = 1.3 + f * 3.2;
+      sp.scale.set(sc, sc, 1);
+      (sp.material as THREE.SpriteMaterial).opacity = 0.95 * (1 - f * f) * Math.min(1, f * 8);
+    }
+  }
+
   /** Rebuild decorative and gameplay content for a chunk starting at difficulty d (0..1). */
   fill(d: number, safe: boolean, rnd: () => number) {
     for (const c of [...this.dyn.children]) {
@@ -175,36 +242,50 @@ export class Chunk {
     this.coins = [];
     this.pickups = [];
 
+    this.smoke = [];
     for (const s of [-1, 1]) {
-      let z = -1.5;
+      // near row: Tripo houses below the roofline, varied size/turn, with the odd gap
+      let z = -1 - rnd() * 2;
+      const kits = kitKeys('bld_');
+      while (z > -CHUNK_LEN + 2) {
+        if (!kits.length) break;
+        if (rnd() < 0.12) { z -= 2 + rnd() * 2; continue; }
+        const key = kits[Math.floor(rnd() * kits.length)];
+        const b = kitClone(key)!, sz = kitSize(key)!;
+        const k = 0.95 + rnd() * 0.4;
+        b.scale.setScalar(k);
+        b.rotation.y = (s > 0 ? -Math.PI / 2 : Math.PI / 2) + (rnd() - 0.5) * 0.5;
+        const along = sz.x * k, across = sz.z * k;
+        b.position.set((7.2 + across / 2 + rnd() * 1.2) * s, -2.9 + rnd() * 1.0, z - along / 2);
+        this.dyn.add(b);
+        z -= along * 0.85 + rnd() * 0.6;
+      }
+      // far row: cheap merged houses that read as the rest of the town through the haze
+      z = -rnd() * 3;
       while (z > -CHUNK_LEN + 3) {
-        const kits = kitKeys('bld_');
-        if (kits.length) {
-          // Tripo building, front (+Z) turned to face the street
-          const key = kits[Math.floor(rnd() * kits.length)];
-          const b = kitClone(key)!, sz = kitSize(key)!;
-          const k = 0.9 + rnd() * 0.2;
-          b.scale.setScalar(k);
-          b.rotation.y = s > 0 ? -Math.PI / 2 : Math.PI / 2;
-          const along = sz.x * k, across = sz.z * k;
-          b.position.set((4.9 + across / 2) * s, -0.9, z - along / 2);
-          this.dyn.add(b);
-          z -= along + 0.25;
-          continue;
+        const w = 4 + rnd() * 3, h = 4 + rnd() * 6, len = 4 + rnd() * 4;
+        this.building(s, z, w, h, len, rnd, 13 + rnd() * 4, -2.5 + rnd() * 2);
+        z -= len + rnd() * 1.5;
+      }
+      // chimneys poking out of the near roofs, each with a smoke column
+      const nc = 1 + Math.floor(rnd() * 2);
+      for (let i = 0; i < nc; i++) {
+        const t = 0.25 + rnd() * 0.5, cz = -4 - rnd() * (CHUNK_LEN - 8);
+        const cx = s * (4.75 + t * 2.6), cy = -0.35 - t * 1.9;
+        this.box(0.9, 2.6, 0.9, 0.12, M.brick, cx, cy + 1.2, cz);
+        this.box(1.15, 0.28, 1.15, 0.1, M.trim, cx, cy + 2.5, cz);
+        for (let p = 0; p < 6; p++) {
+          const sp = new THREE.Sprite(new THREE.SpriteMaterial({ map: PUFF(), transparent: true, depthWrite: false, opacity: 0.8 }));
+          const ph = p / 6 + rnd() * 0.05;
+          sp.userData = { x: cx, y: cy + 2.8, z: cz, ph };
+          this.dyn.add(sp);
+          this.smoke.push(sp);
         }
-        const w = 3 + rnd() * 3, h = 2.4 + rnd() * 5, len = 4 + rnd() * 4.5;
-        this.building(s, z, w, h, len, rnd);
-        // hanging lantern with cap and tassel on the street side
-        if (rnd() > 0.35) {
-          const ly = 2.5 + rnd() * 0.6, lz = z - len / 2;
-          this.put(geo.lantern, M.lantern, 4.55 * s, ly, lz, 0, 0, 0, 1, 1.25, 1, false);
-          this.put(geo.cap, M.lanternCap, 4.55 * s, ly + 0.38, lz, 0, 0, 0, 1, 1, 1, false);
-          this.put(geo.cap, M.lanternCap, 4.55 * s, ly - 0.38, lz, 0, 0, 0, 1, 1, 1, false);
-          this.put(new THREE.CylinderGeometry(0.012, 0.012, 0.8, 4), M.string, 4.55 * s, ly + 0.8, lz);
-        }
-        z -= len + 0.4;
       }
     }
+    // lantern garlands strung across the street between two posts
+    const ng = 1 + Math.floor(rnd() * 2);
+    for (let i = 0; i < ng; i++) this.garland(-6 - i * 18 - rnd() * 10, rnd);
     this.flush();
 
     if (safe) {
@@ -347,6 +428,13 @@ export class World {
       c.fill(0, i < 2, this.rnd);
       this.spawned++;
     });
+  }
+
+  private clock = 0;
+  /** Per-frame ambient animation (smoke), independent of scrolling. */
+  tick(dt: number) {
+    this.clock += dt;
+    for (const c of this.chunks) c.animateSmoke(this.clock);
   }
 
   /** Move the world toward the camera by dz and recycle chunks that passed. */
