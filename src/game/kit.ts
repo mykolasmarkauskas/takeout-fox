@@ -40,10 +40,10 @@ export const KIT: Record<string, KitSpec> = {
   noodlehouse_b: { url: 'models/noodlehouse_b.glb', fit: 'height', size: 6.2 },
   noodlehouse_c: { url: 'models/noodlehouse_c.glb', fit: 'height', size: 6.2 },
   // gag set pieces
-  pigeons: { url: 'models/pigeons.glb', fit: 'width', size: 3.2 },
-  seagull: { url: 'models/seagull.glb', fit: 'height', size: 3.2 },
-  chimneytherapy: { url: 'models/chimneytherapy.glb', fit: 'width', size: 3.4 },
-  raccoonmirror: { url: 'models/raccoonmirror.glb', fit: 'height', size: 2.6 },
+  pigeons: { url: 'models/pigeons.glb', fit: 'width', size: 3.8 },
+  seagull: { url: 'models/seagull.glb', fit: 'height', size: 4.2 },
+  chimneytherapy: { url: 'models/chimneytherapy.glb', fit: 'width', size: 4 },
+  raccoonmirror: { url: 'models/raccoonmirror.glb', fit: 'height', size: 3.2 },
 };
 
 const ready = new Map<string, THREE.Object3D>();

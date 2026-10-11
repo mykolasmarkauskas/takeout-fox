@@ -69,8 +69,8 @@ const M = {
   piling: std(0x5e3a26, 0.8), bay: std(0x52b9bd, 0.18, { clearcoat: 0.7, clearcoatRoughness: 0.15 }),
   bulb: new THREE.MeshStandardMaterial({ color: 0xfff1c4, emissive: 0xffd77a, emissiveIntensity: 1.3, roughness: 0.3 }),
   // garden terraces
-  gPaverA: std(0xbdb4a8, 0.85), gPaverB: std(0xaea597, 0.85), gPaverC: std(0xc8c0b4, 0.85),
-  gCurb: std(0xd9d2c6, 0.8), lawn: std(0x8cc56a, 0.9), soil: std(0x8a6a4c, 0.9),
+  gPaverA: std(0xcfb9a3, 0.85), gPaverB: std(0xc0a993, 0.85), gPaverC: std(0xd9c5b0, 0.85),
+  gCurb: std(0xe4d6c4, 0.8), lawn: std(0x8cc56a, 0.9), hedge: std(0x6fae5a, 0.9), soil: std(0x8a6a4c, 0.9),
   lanternRed: new THREE.MeshStandardMaterial({ color: 0xd8301f, emissive: 0xff2a10, emissiveIntensity: 1.0, roughness: 0.4 }),
   lanternGold: new THREE.MeshStandardMaterial({ color: 0xff9a1a, emissive: 0xff8a10, emissiveIntensity: 0.95, roughness: 0.4 }),
 };
@@ -203,6 +203,7 @@ const signWood = new THREE.MeshStandardMaterial({ color: 0x7a4a2a, roughness: 0.
 const signGeo = new THREE.BoxGeometry(2.4, 0.94, 0.08);
 const gateBoardGeo = new THREE.BoxGeometry(3.6, 1.4, 0.16);
 const posterGeo = new THREE.BoxGeometry(2.6, 1.62, 0.1);
+const glowMats = new Map<number, THREE.SpriteMaterial>();
 const GAG_POSTERS = ['gag_01_chimney_therapy', 'gag_02_pigeon_union', 'gag_03_raccoon_mirror', 'gag_04_noodle_meeting', 'gag_05_seagull'];
 const posterMats = new Map<string, THREE.Material>();
 const posterMat = (n: string) => {
@@ -418,6 +419,15 @@ export class Chunk {
     for (const sd of [-1, 1]) this.put(geo.lantern.clone(), M.lanternRed, sd * 3.2, 5.65, z + 0.1, 0, 0, 0, 1.1, 1.3, 1.1);
   }
 
+  /** Soft additive halo around a light (cheap stand-in for bloom). */
+  private glow(x: number, y: number, z: number, size: number, color: number) {
+    let mat = glowMats.get(color);
+    if (!mat) glowMats.set(color, (mat = new THREE.SpriteMaterial({ map: PUFF(), color, transparent: true, opacity: 0.55, blending: THREE.AdditiveBlending, depthWrite: false, fog: true })));
+    const sp = new THREE.Sprite(mat);
+    sp.position.set(x, y, z); sp.scale.set(size, size, 1);
+    this.dyn.add(sp);
+  }
+
   private garland(z: number, rnd: () => number, th: Theme) {
     const hl = 8.4 + rnd() * 0.6, hr = 8.4 + rnd() * 0.6, sag = 0.7 + rnd() * 0.3; // lowest lantern ~6.5: well above a jump
     for (const [sd, h] of [[-1, hl], [1, hr]] as const) {
@@ -438,10 +448,12 @@ export class Chunk {
       }
       if (th.far === 'sea') { // harbour: warm light bulbs on a wire, like the harbour art
         this.put(geo.sphere, M.bulb, p.x, p.y - 0.28, p.z, 0, 0, 0, 0.36, 0.42, 0.36, false);
+        this.glow(p.x, p.y - 0.28, p.z, 1.4, 0xffe2a0);
         this.put(geo.cap, M.lanternCap, p.x, p.y - 0.06, p.z, 0, 0, 0, 0.6, 1.2, 0.6, false);
         continue;
       }
       this.put(geo.lantern, m, p.x, p.y - 0.5, p.z, 0, 0, 0, 1.15, 1.35, 1.15, false);
+      this.glow(p.x, p.y - 0.5, p.z, 2.2, m === M.lanternGold ? 0xffb84a : 0xff7a3a);
       this.put(geo.cap, M.lanternCap, p.x, p.y - 0.12, p.z, 0, 0, 0, 0.9, 1, 0.9, false);
       this.put(geo.cap, M.lanternCap, p.x, p.y - 0.92, p.z, 0, 0, 0, 1.1, 1, 1.1, false);
     }
@@ -520,29 +532,32 @@ export class Chunk {
     let z = -1 - rnd() * 2;
     while (z > -CHUNK_LEN + 2) {
       const r = rnd();
-      if (r < 0.55) { this.kit('planter', s * 5.4, -0.1, z - 1.2, Math.PI / 2 + (rnd() - 0.5) * 0.1); z -= 3 + rnd() * 1.5; }
-      else if (r < 0.75) { this.kit('fountain', s * 6.6, -0.1, z - 1.6, rnd() * 6); z -= 4.5 + rnd() * 2; }
-      else if (r < 0.9) { this.kit('trellis', s * 5.6, -0.1, z - 1.2, this.facing(s)); z -= 3.5; }
+      if (r < 0.5) { this.kit('planter', s * 5.4, -0.1, z - 1.2, Math.PI / 2 + (rnd() - 0.5) * 0.1); z -= 3 + rnd() * 1.5; }
+      else if (r < 0.66) { this.kit('fountain', s * 6.6, -0.1, z - 1.6, rnd() * 6); z -= 4.5 + rnd() * 2; }
+      else if (r < 0.8) { this.kit('trellis', s * 5.6, -0.1, z - 1.2, this.facing(s)); z -= 3.5; }
       else { this.tree(s * (6.2 + rnd()), -0.1, z - 1.5, 0.75 + rnd() * 0.3, rnd); z -= 3.5; }
+      // a cheap clipped hedge between the props keeps the strip green without more meshes
+      const gap = 2.4 + rnd() * 2.2;
+      if (z - gap > -CHUNK_LEN + 1) { this.put(new RoundedBoxGeometry(1.1, 0.75, gap - 0.3, 2, 0.25), M.hedge, s * 5.5, 0.28, z - gap / 2); z -= gap; }
     }
     // middle strip: pergolas and bonsai trees
-    for (let z2 = -2 - rnd() * 6; z2 > -CHUNK_LEN + 2; z2 -= 9 + rnd() * 6) {
-      if (rnd() < 0.55) this.kit('pergola', s * (8.6 + rnd()), -0.1, z2, rnd() * 0.4, 0.95 + rnd() * 0.2);
-      else this.tree(s * (8.4 + rnd() * 1.5), -0.1, z2, 0.9 + rnd() * 0.4, rnd);
+    for (let z2 = -2 - rnd() * 6; z2 > -CHUNK_LEN + 2; z2 -= 11 + rnd() * 7) {
+      if (rnd() < 0.4) this.kit('pergola', s * (7.4 + rnd() * 0.6), -0.1, z2, rnd() * 0.4, 0.95 + rnd() * 0.2);
+      else this.tree(s * (7.2 + rnd()), -0.1, z2, 0.9 + rnd() * 0.4, rnd);
     }
     // houses behind
     const houses = ['gardenhouse_a', 'gardenhouse_b'].filter((k) => kitHas(k));
     z = -rnd() * 3;
     while (houses.length && z > -CHUNK_LEN + 2) {
       const key = houses[Math.floor(rnd() * houses.length)];
-      const sz = kitSize(key)!, k = 1.05 + rnd() * 0.35;
+      const sz = kitSize(key)!, k = 1.25 + rnd() * 0.35;
       const along = sz.x * k, across = sz.z * k;
-      this.kit(key, (11 + across / 2 + rnd()) * s, -0.15, z - along / 2, this.facing(s) + (rnd() - 0.5) * 0.3, k);
+      this.kit(key, (9.2 + across / 2 + rnd() * 0.6) * s, -0.15, z - along / 2, this.facing(s) + (rnd() - 0.5) * 0.3, k);
       z -= along * 0.95 + 0.4 + rnd();
     }
     if (s > 0 && rnd() < 0.22) {
       const b = this.kit('balloon', (10 + rnd() * 25) * (rnd() < 0.5 ? -1 : 1), 22 + rnd() * 14, -CHUNK_LEN / 2, rnd() * 6, 1.2 + rnd() * 0.6);
-      if (b) { b.userData.bob = rnd() * 6; b.userData.y0 = b.position.y; b.userData.balloon = true; this.boats.push(b); }
+      if (b) { b.traverse((o) => { const m = (o as THREE.Mesh).material as THREE.MeshStandardMaterial | undefined; if (m) m.fog = false; }); b.userData.bob = rnd() * 6; b.userData.y0 = b.position.y; b.userData.balloon = true; this.boats.push(b); }
     }
   }
 
@@ -678,7 +693,7 @@ export class Chunk {
       this.put(new THREE.CylinderGeometry(0.07, 0.09, 2.3, 6), M.pole, sd * 4.25, 1.15, sz);
     }
     // a garland strung across the street between two posts, roughly one every ~100 m
-    if (rnd() < (th.far === 'sea' ? 0.6 : 0.4)) { const gz = -8 - rnd() * 24; this.garland(gz, rnd, th); }
+    if (rnd() < (th.far === 'garden' ? 0.35 : 0.65)) { const gz = -8 - rnd() * 24; this.garland(gz, rnd, th); }
     this.flush();
 
     if (safe) {

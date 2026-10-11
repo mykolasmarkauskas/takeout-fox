@@ -32,10 +32,15 @@ const QUIPS = [
 const HECKLES = ['🦝 Share the noodles!', '🦝 Just ONE bite!', '🦝 We have coupons!', '🦝 Free samples?!', '🦝 Is that extra spicy?', '🦝 We\'re not hangry, YOU\'RE hangry!'];
 const pick = <T,>(a: T[]) => a[Math.floor(Math.random() * a.length)];
 const A = (n: string) => `${import.meta.env.BASE_URL}art/${n}.webp`;
+const LIGHT = [
+  { sun: 0xffd9a0, si: 2.2, sky: 0xfff0d6, gr: 0xb07a55, hi: 0.7 },
+  { sun: 0xd8d0ff, si: 1.7, sky: 0xd6d2ff, gr: 0x5e6f86, hi: 0.95 },
+  { sun: 0xfff6dc, si: 2.3, sky: 0xf0ffe6, gr: 0x86a46a, hi: 0.8 },
+];
 const DISTRICTS = [
   { name: 'Noodle Roofs', img: 'world_01_noodle_roofs', sky: 0xf9c98a, fog: 0xf6b46b },
   { name: 'Harbour Lights', img: 'world_02_harbour_lights', sky: 0xa9a4d8, fog: 0x9a93c9 },
-  { name: 'Garden Terraces', img: 'world_03_garden_terraces', sky: 0xcfe9c4, fog: 0xbfe0b8 },
+  { name: 'Garden Terraces', img: 'world_03_garden_terraces', sky: 0xd8eed6, fog: 0xd2e6cc },
 ];
 const FOODS = ['food_01_noodles', 'food_02_pizza', 'food_03_bubbletea'];
 const CUSTOMERS = [
@@ -119,6 +124,7 @@ export class Game {
     this.scene.environmentIntensity = 0.4;
     const hemi = new THREE.HemisphereLight(0xfff0d6, 0xb07a55, 0.7);
     this.scene.add(hemi);
+    this.hemi = hemi;
     const sun = new THREE.DirectionalLight(0xffd9a0, 2.2);
     sun.position.set(-6, 14, 8);
     sun.castShadow = true;
@@ -191,6 +197,7 @@ export class Game {
     requestAnimationFrame((t) => this.loop(t));
   }
   private sun: THREE.DirectionalLight;
+  private hemi!: THREE.HemisphereLight;
 
   resize() {
     const p = this.canvas.parentElement!;
@@ -251,6 +258,13 @@ export class Game {
     fog.copy(this._ca.set(DISTRICTS[m.a].fog)).lerp(this._cb.set(DISTRICTS[m.b].fog), m.t).lerp(bg, 0.6);
     this.scenery.setHorizon(bg);
     this.scenery.setMix(m.a, m.b, m.t);
+    // light per district: warm sunset roofs, cool dusk harbour, fresh green gardens
+    const L = LIGHT[m.a], R = LIGHT[m.b], k = m.t;
+    this.sun.color.setHex(L.sun).lerp(this._ca.setHex(R.sun), k);
+    this.sun.intensity = L.si + (R.si - L.si) * k;
+    this.hemi.color.setHex(L.sky).lerp(this._ca.setHex(R.sky), k);
+    this.hemi.groundColor.setHex(L.gr).lerp(this._ca.setHex(R.gr), k);
+    this.hemi.intensity = L.hi + (R.hi - L.hi) * k;
   }
 
   private deliver() {
