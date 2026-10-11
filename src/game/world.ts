@@ -64,6 +64,13 @@ const M = {
   roofTileB: std(0x5e3d32, 0.6),
   pole: std(0x5a3a28, 0.7),
   gateRed: std(0xb8321f, 0.55),
+  // harbour boardwalk
+  plankA: std(0xa0613f, 0.75), plankB: std(0x8f5536, 0.75), plankC: std(0xad6d48, 0.75),
+  piling: std(0x5e3a26, 0.8), bay: std(0x52b9bd, 0.18, { clearcoat: 0.7, clearcoatRoughness: 0.15 }),
+  bulb: new THREE.MeshStandardMaterial({ color: 0xfff1c4, emissive: 0xffd77a, emissiveIntensity: 1.3, roughness: 0.3 }),
+  // garden terraces
+  gPaverA: std(0xcfb9a3, 0.85), gPaverB: std(0xc0a993, 0.85), gPaverC: std(0xd9c5b0, 0.85),
+  gCurb: std(0xe4d6c4, 0.8), lawn: std(0x8cc56a, 0.9), hedge: std(0x6fae5a, 0.9), soil: std(0x8a6a4c, 0.9),
   lanternRed: new THREE.MeshStandardMaterial({ color: 0xd8301f, emissive: 0xff2a10, emissiveIntensity: 1.0, roughness: 0.4 }),
   lanternGold: new THREE.MeshStandardMaterial({ color: 0xff9a1a, emissive: 0xff8a10, emissiveIntensity: 0.95, roughness: 0.4 }),
 };
@@ -85,7 +92,7 @@ export function districtMix(dist: number) {
 const blockHash = (dist: number) => { const x = Math.sin(Math.floor(dist / 9) * 127.1 + 311.7) * 43758.5453; return x - Math.floor(x); };
 interface Theme { roof: [THREE.Material, THREE.Material]; kits: string[]; lanterns: THREE.Material[]; far: 'town' | 'sea' | 'garden'; chimneys: number; curb: 'none' | 'bollard' | 'pot' }
 const THEMES: Theme[] = [
-  { roof: [M.roofTileA, M.roofTileB], kits: ['bld_noodle', 'bld_tower', 'bld_teal'], lanterns: [M.lanternRed, M.lanternGold, M.lanternRed], far: 'town', chimneys: 2, curb: 'none' },
+  { roof: [M.roofTileA, M.roofTileB], kits: ['bld_noodle', 'bld_tower', 'bld_teal', 'noodlehouse_b', 'noodlehouse_c'], lanterns: [M.lanternRed, M.lanternGold, M.lanternRed], far: 'town', chimneys: 2, curb: 'none' },
   { roof: [M.roofTealA, M.roofTealB], kits: ['bld_teal', 'bld_teal', 'bld_tower'], lanterns: [M.lanternWarm, M.lanternTeal, M.lanternWarm], far: 'sea', chimneys: 1, curb: 'bollard' },
   { roof: [M.roofMossA, M.roofMossB], kits: ['bld_noodle', 'bld_tower', 'bld_teal'], lanterns: [M.flowerPink, M.flowerWhite, M.flowerPink], far: 'garden', chimneys: 1, curb: 'pot' },
 ];
@@ -195,6 +202,19 @@ const signFace = new Map<string, THREE.Material>();
 const signWood = new THREE.MeshStandardMaterial({ color: 0x7a4a2a, roughness: 0.8 });
 const signGeo = new THREE.BoxGeometry(2.4, 0.94, 0.08);
 const gateBoardGeo = new THREE.BoxGeometry(3.6, 1.4, 0.16);
+const posterGeo = new THREE.BoxGeometry(2.6, 1.62, 0.1);
+const glowMats = new Map<number, THREE.SpriteMaterial>();
+const GAG_POSTERS = ['gag_01_chimney_therapy', 'gag_02_pigeon_union', 'gag_03_raccoon_mirror', 'gag_04_noodle_meeting', 'gag_05_seagull'];
+const posterMats = new Map<string, THREE.Material>();
+const posterMat = (n: string) => {
+  let m = posterMats.get(n);
+  if (!m) {
+    const t = new THREE.TextureLoader().load(`${import.meta.env.BASE_URL}art/${n}.webp`);
+    t.colorSpace = THREE.SRGBColorSpace;
+    posterMats.set(n, (m = new THREE.MeshStandardMaterial({ map: t, roughness: 0.6 })));
+  }
+  return m;
+};
 const coinFaceMat = new THREE.MeshPhysicalMaterial({ map: COIN_TEX, bumpMap: COIN_TEX, bumpScale: 2.5, emissive: 0x6a3d00, emissiveIntensity: 0.25, roughness: 0.32, metalness: 0.6, clearcoat: 0.8, clearcoatRoughness: 0.15 });
 const coinEdgeMat = new THREE.MeshPhysicalMaterial({ color: 0xe9a21c, emissive: 0x6a3d00, emissiveIntensity: 0.25, roughness: 0.3, metalness: 0.65, clearcoat: 0.8 });
 
@@ -210,45 +230,94 @@ export class Chunk {
 
   constructor() {
     this.group.add(this.dyn);
-    const stat = new Map<THREE.Material, THREE.BufferGeometry[]>();
+    let stat!: Map<THREE.Material, THREE.BufferGeometry[]>;
     const add = (g: THREE.BufferGeometry, m: THREE.Material, x: number, y: number, z: number, rx = 0, rz = 0) => {
       let gg = g.index ? g.toNonIndexed() : g;
       for (const k of Object.keys(gg.attributes)) if (k !== 'position' && k !== 'normal' && k !== 'uv') gg.deleteAttribute(k);
       gg = gg.applyMatrix4(_m.compose(_v.set(x, y, z), _q.setFromEuler(_e.set(rx, 0, rz)), _s.set(1, 1, 1)));
       (stat.get(m) ?? stat.set(m, []).get(m)!).push(gg);
     };
-    // path: big stone pavers in staggered rows, like the key art
-    const rows = 20, rl = CHUNK_LEN / rows, mats = [M.paverA, M.paverB, M.paverC];
-    let n = 0;
-    for (let i = 0; i < rows; i++) {
-      const widths = i % 2 ? [1.25, 2.45, 2.45, 1.25] : [2.45, 2.5, 2.45];
-      let x = -3.7;
-      for (const w of widths) {
-        add(new RoundedBoxGeometry(w - 0.08, 0.4, rl - 0.08, 2, 0.07), mats[(n++ * 7 + i) % 3], x + w / 2, -0.2, -(i + 0.5) * rl);
-        x += w;
+    // three ground sets per chunk, one per district look; fill() shows the right one
+    const town = new Map<THREE.Material, THREE.BufferGeometry[]>(), sea = new Map<THREE.Material, THREE.BufferGeometry[]>(), garden = new Map<THREE.Material, THREE.BufferGeometry[]>();
+    const rows = 20, rl = CHUNK_LEN / rows;
+    // --- Noodle Roofs: big stone pavers on the roof ridge, curbs, tiled roofs sloping away
+    {
+      stat = town;
+      const mats = [M.paverA, M.paverB, M.paverC];
+      let n = 0;
+      for (let i = 0; i < rows; i++) {
+        const widths = i % 2 ? [1.25, 2.45, 2.45, 1.25] : [2.45, 2.5, 2.45];
+        let x = -3.7;
+        for (const w of widths) { add(new RoundedBoxGeometry(w - 0.08, 0.4, rl - 0.08, 2, 0.07), mats[(n++ * 7 + i) % 3], x + w / 2, -0.2, -(i + 0.5) * rl); x += w; }
+      }
+      add(new THREE.BoxGeometry(8.2, 0.3, CHUNK_LEN), M.grout, 0, -0.22, -CHUNK_LEN / 2);
+      add(new THREE.PlaneGeometry(60, CHUNK_LEN), M.under, 0, -4.2, -CHUNK_LEN / 2, -Math.PI / 2);
+      for (const sd of [-1, 1]) {
+        for (let i = 0; i < 20; i++) add(new RoundedBoxGeometry(0.75, 0.6, rl - 0.1, 2, 0.12), M.curb, 4.1 * sd, 0.1, -(i + 0.5) * rl);
+        for (let k = 0; k < 6; k++) {
+          const t = k / 5;
+          add(new THREE.CapsuleGeometry(0.32, CHUNK_LEN - 0.7, 2, 8), k % 2 ? M.roofTileB : M.roofTileA, sd * (4.75 + t * 2.6), -0.35 - t * 1.9, -CHUNK_LEN / 2, Math.PI / 2, 0);
+        }
       }
     }
-    // grout bed under the pavers, and a dark "town below" floor so the sky never shows through
-    add(new THREE.BoxGeometry(8.2, 0.3, CHUNK_LEN), M.grout, 0, -0.22, -CHUNK_LEN / 2);
-    add(new THREE.PlaneGeometry(60, CHUNK_LEN), M.under, 0, -4.2, -CHUNK_LEN / 2, -Math.PI / 2);
-    // stone curbs in blocks on both edges
-    for (const sd of [-1, 1]) {
-      for (let i = 0; i < 20; i++) add(new RoundedBoxGeometry(0.75, 0.6, rl - 0.1, 2, 0.12), M.curb, 4.1 * sd, 0.1, -(i + 0.5) * rl);
-      // roofs sloping away from the ridge path: courses of rounded clay tiles
-      for (let k = 0; k < 6; k++) {
-        const t = k / 5;
-        add(new THREE.CapsuleGeometry(0.32, CHUNK_LEN - 0.7, 2, 8), k % 2 ? M.roofTileB : M.roofTileA, sd * (4.75 + t * 2.6), -0.35 - t * 1.9, -CHUNK_LEN / 2, Math.PI / 2, 0);
+    // --- Harbour Lights: a plank boardwalk on pilings over turquoise water, rope rail posts
+    {
+      stat = sea;
+      const mats = [M.plankA, M.plankB, M.plankC];
+      const boards = 9, bw = 8.4 / boards;
+      for (let b = 0; b < boards; b++) {
+        let z = -(b % 3) * 1.3; // staggered board ends
+        let k = b;
+        while (z > -CHUNK_LEN) {
+          const len = Math.min(4, z + CHUNK_LEN);
+          add(new RoundedBoxGeometry(bw - 0.05, 0.28, len - 0.06, 2, 0.05), mats[k++ % 3], -4.2 + (b + 0.5) * bw, -0.14, z - len / 2);
+          z -= len;
+        }
+      }
+      add(new THREE.BoxGeometry(8.4, 0.25, CHUNK_LEN), M.piling, 0, -0.42, -CHUNK_LEN / 2); // joists
+      add(new THREE.PlaneGeometry(260, CHUNK_LEN), M.bay, 0, -1.7, -CHUNK_LEN / 2, -Math.PI / 2);
+      for (const sd of [-1, 1]) for (let i = 0; i < CHUNK_LEN / 5; i++) {
+        const z = -i * 5 - 2.5;
+        add(new THREE.CylinderGeometry(0.22, 0.24, 2.0, 10), M.piling, sd * 4.1, -0.9, z); // piling under the deck
+        add(new THREE.CylinderGeometry(0.16, 0.18, 1.3, 10), M.piling, sd * 4.25, 0.5, z); // rail post above it
+        add(new THREE.SphereGeometry(0.17, 10, 6), M.piling, sd * 4.25, 1.17, z);
+        add(new THREE.CylinderGeometry(0.035, 0.035, 5, 5), M.rope, sd * 4.25, 0.95, z - 2.5, Math.PI / 2, 0); // rope rail between posts
       }
     }
-    for (const [m, list] of stat) {
-      const mesh = new THREE.Mesh(mergeGeometries(list, false)!, m);
-      mesh.receiveShadow = true; mesh.castShadow = m === M.curb;
-      if (m === M.roofTileA) this.roofA = mesh;
-      if (m === M.roofTileB) this.roofB = mesh;
-      this.group.add(mesh);
-      list.forEach((g) => g.dispose());
+    // --- Garden Terraces: grey paver path between lawns and low planted curbs
+    {
+      stat = garden;
+      const mats = [M.gPaverA, M.gPaverB, M.gPaverC];
+      let n = 0;
+      for (let i = 0; i < rows * 2; i++) {
+        const widths = i % 2 ? [1.0, 1.6, 1.6, 1.6, 1.6, 1.0] : [1.6, 1.6, 1.6, 1.6, 1.6];
+        let x = -4.0;
+        for (const w of widths) { add(new RoundedBoxGeometry(w - 0.06, 0.36, rl / 2 - 0.06, 2, 0.05), mats[(n++ * 5 + i) % 3], x + w / 2, -0.18, -(i + 0.5) * rl / 2); x += w; }
+      }
+      add(new THREE.BoxGeometry(8.2, 0.3, CHUNK_LEN), M.grout, 0, -0.22, -CHUNK_LEN / 2);
+      for (const sd of [-1, 1]) {
+        for (let i = 0; i < 20; i++) add(new RoundedBoxGeometry(0.6, 0.45, rl - 0.08, 2, 0.1), M.gCurb, 4.25 * sd, 0.02, -(i + 0.5) * rl);
+        add(new THREE.BoxGeometry(40, 0.3, CHUNK_LEN), M.lawn, sd * 24.5, -0.25, -CHUNK_LEN / 2);
+      }
     }
+    const build = (src: Map<THREE.Material, THREE.BufferGeometry[]>) => {
+      const g = new THREE.Group();
+      for (const [m, list] of src) {
+        const mesh = new THREE.Mesh(mergeGeometries(list, false)!, m);
+        mesh.receiveShadow = true; mesh.castShadow = m === M.curb;
+        if (m === M.roofTileA) this.roofA = mesh;
+        if (m === M.roofTileB) this.roofB = mesh;
+        g.add(mesh);
+        list.forEach((x) => x.dispose());
+      }
+      this.group.add(g);
+      return g;
+    };
+    this.grounds = { town: build(town), sea: build(sea), garden: build(garden) };
   }
+  grounds!: Record<'town' | 'sea' | 'garden', THREE.Group>;
+  /** The district look of this whole chunk (set in fill). */
+  th: Theme = THEMES[0];
 
   /** Queue a decorative piece; merged per material after the chunk is built (few draw calls). */
   private put(g: THREE.BufferGeometry, m: THREE.Material, x: number, y: number, z: number, rx = 0, ry = 0, rz = 0, sx = 1, sy = 1, sz = 1, own = true) {
@@ -350,6 +419,15 @@ export class Chunk {
     for (const sd of [-1, 1]) this.put(geo.lantern.clone(), M.lanternRed, sd * 3.2, 5.65, z + 0.1, 0, 0, 0, 1.1, 1.3, 1.1);
   }
 
+  /** Soft additive halo around a light (cheap stand-in for bloom). */
+  private glow(x: number, y: number, z: number, size: number, color: number) {
+    let mat = glowMats.get(color);
+    if (!mat) glowMats.set(color, (mat = new THREE.SpriteMaterial({ map: PUFF(), color, transparent: true, opacity: 0.55, blending: THREE.AdditiveBlending, depthWrite: false, fog: true })));
+    const sp = new THREE.Sprite(mat);
+    sp.position.set(x, y, z); sp.scale.set(size, size, 1);
+    this.dyn.add(sp);
+  }
+
   private garland(z: number, rnd: () => number, th: Theme) {
     const hl = 8.4 + rnd() * 0.6, hr = 8.4 + rnd() * 0.6, sag = 0.7 + rnd() * 0.3; // lowest lantern ~6.5: well above a jump
     for (const [sd, h] of [[-1, hl], [1, hr]] as const) {
@@ -359,7 +437,7 @@ export class Chunk {
     const pt = (u: number) => new THREE.Vector3(-4.1 + 8.2 * u, hl + (hr - hl) * u - sag * 4 * u * (1 - u), z);
     const curve = new THREE.CatmullRomCurve3([0, 0.25, 0.5, 0.75, 1].map(pt));
     this.put(new THREE.TubeGeometry(curve, 24, 0.025, 4, false), M.string, 0, 0, 0);
-    const nl = 7;
+    const nl = th.far === 'sea' ? 11 : 7;
     for (let i = 1; i <= nl; i++) {
       const p = pt(i / (nl + 1));
       const m = th.lanterns[i % 3];
@@ -368,9 +446,148 @@ export class Chunk {
         this.put(geo.sphere, M.vine, p.x + 0.35, p.y - 0.1, p.z, 0, 0, 0, 0.4, 0.25, 0.3, false);
         continue;
       }
+      if (th.far === 'sea') { // harbour: warm light bulbs on a wire, like the harbour art
+        this.put(geo.sphere, M.bulb, p.x, p.y - 0.28, p.z, 0, 0, 0, 0.36, 0.42, 0.36, false);
+        this.glow(p.x, p.y - 0.28, p.z, 1.4, 0xffe2a0);
+        this.put(geo.cap, M.lanternCap, p.x, p.y - 0.06, p.z, 0, 0, 0, 0.6, 1.2, 0.6, false);
+        continue;
+      }
       this.put(geo.lantern, m, p.x, p.y - 0.5, p.z, 0, 0, 0, 1.15, 1.35, 1.15, false);
+      this.glow(p.x, p.y - 0.5, p.z, 2.2, m === M.lanternGold ? 0xffb84a : 0xff7a3a);
       this.put(geo.cap, M.lanternCap, p.x, p.y - 0.12, p.z, 0, 0, 0, 0.9, 1, 0.9, false);
       this.put(geo.cap, M.lanternCap, p.x, p.y - 0.92, p.z, 0, 0, 0, 1.1, 1, 1.1, false);
+    }
+  }
+
+
+  /** Place a kit model; returns it (or null if that model is missing). */
+  private kit(key: string, x: number, y: number, z: number, ry = 0, k = 1) {
+    if (!kitHas(key)) return null;
+    const o = kitClone(key)!;
+    o.scale.multiplyScalar(k);
+    o.rotation.y = ry;
+    o.position.set(x, y, z);
+    this.dyn.add(o);
+    return o;
+  }
+  private facing(s: number) { return s > 0 ? -Math.PI / 2 : Math.PI / 2; }
+
+  /** Noodle Roofs: Tripo houses below the roofline both sides, chimneys with smoke. */
+  private townSide(s: number, rnd: () => number, th: Theme) {
+    const have = THEMES[0].kits.filter((k) => kitHas(k));
+    for (const [near, base, lo, hi] of [[7.2, -2.9, 0.95, 1.35], [14, -4.2, 1.2, 1.6]] as const) {
+      let z = -1 - rnd() * 2;
+      while (z > -CHUNK_LEN + 2) {
+        if (!have.length) break;
+        if (rnd() < 0.1) { z -= 2 + rnd() * 2; continue; }
+        const key = have[Math.floor(rnd() * have.length)];
+        const sz = kitSize(key)!, k = lo + rnd() * (hi - lo);
+        const along = sz.x * k, across = sz.z * k;
+        this.kit(key, (near + across / 2 + rnd() * 1.2) * s, base + rnd(), z - along / 2, this.facing(s) + (rnd() - 0.5) * 0.5, k);
+        z -= along * 0.85 + rnd() * 0.6;
+      }
+    }
+    const nc = Math.floor(rnd() * (th.chimneys + 1));
+    for (let i = 0; i < nc; i++) {
+      const t = 0.25 + rnd() * 0.5, cz = -4 - rnd() * (CHUNK_LEN - 8);
+      const cx = s * (4.75 + t * 2.6), cy = -0.35 - t * 1.9;
+      this.box(0.9, 2.6, 0.9, 0.12, M.brick, cx, cy + 1.2, cz);
+      this.box(1.15, 0.28, 1.15, 0.1, M.trim, cx, cy + 2.5, cz);
+      for (let p = 0; p < 6; p++) {
+        const sp = new THREE.Sprite(new THREE.SpriteMaterial({ map: PUFF(), transparent: true, depthWrite: false, opacity: 0.8 }));
+        sp.userData = { x: cx, y: cy + 2.8, z: cz, ph: p / 6 + rnd() * 0.05 };
+        this.dyn.add(sp);
+        this.smoke.push(sp);
+      }
+    }
+  }
+
+  /** Harbour Lights: piers with cargo and cranes, boats moored on the water, a lighthouse far out. */
+  private harbourSide(s: number, rnd: () => number) {
+    let z = -2 - rnd() * 4;
+    while (z > -CHUNK_LEN + 3) {
+      const r = rnd();
+      if (r < 0.45) { // a pier with cargo, sometimes a crane on it
+        const dz = z - 2.5;
+        this.kit('dock', s * (7.2 + rnd() * 1.5), -1.75, dz, this.facing(s) + (rnd() - 0.5) * 0.3, 0.95 + rnd() * 0.3);
+        if (rnd() < 0.45) this.kit('crane', s * (10 + rnd() * 2), -1.75, dz - 3, this.facing(s) + rnd() * 0.6, 0.9 + rnd() * 0.3);
+        z -= 8 + rnd() * 4;
+      } else if (r < 0.8) {
+        this.boat(s * (8 + rnd() * 6), z - 3, rnd);
+        z -= 6 + rnd() * 3;
+      } else {
+        const rb = this.kit('rowboat', s * (6.2 + rnd() * 1.5), -1.78, z - 2, rnd() * Math.PI);
+        if (rb) { rb.userData.bob = rnd() * 6; rb.userData.y0 = -1.78; this.boats.push(rb); }
+        z -= 5 + rnd() * 3;
+      }
+    }
+    // second line of boats further out
+    for (let z2 = -rnd() * 8; z2 > -CHUNK_LEN; z2 -= 9 + rnd() * 8) this.boat(s * (17 + rnd() * 12), z2, rnd);
+    if (s < 0 && rnd() < 0.18) this.kit('lighthouse', -48 - rnd() * 10, -1.8, -CHUNK_LEN / 2, rnd() * 6, 1);
+  }
+
+  /** Garden Terraces: planters and fountains on the lawn, pergolas and trellises, cream houses behind. */
+  private gardenSide(s: number, rnd: () => number) {
+    // front strip: planters along the curb with the odd fountain or trellis
+    let z = -1 - rnd() * 2;
+    while (z > -CHUNK_LEN + 2) {
+      const r = rnd();
+      if (r < 0.5) { this.kit('planter', s * 5.4, -0.1, z - 1.2, Math.PI / 2 + (rnd() - 0.5) * 0.1); z -= 3 + rnd() * 1.5; }
+      else if (r < 0.66) { this.kit('fountain', s * 6.6, -0.1, z - 1.6, rnd() * 6); z -= 4.5 + rnd() * 2; }
+      else if (r < 0.8) { this.kit('trellis', s * 5.6, -0.1, z - 1.2, this.facing(s)); z -= 3.5; }
+      else { this.tree(s * (6.2 + rnd()), -0.1, z - 1.5, 0.75 + rnd() * 0.3, rnd); z -= 3.5; }
+      // a cheap clipped hedge between the props keeps the strip green without more meshes
+      const gap = 2.4 + rnd() * 2.2;
+      if (z - gap > -CHUNK_LEN + 1) { this.put(new RoundedBoxGeometry(1.1, 0.75, gap - 0.3, 2, 0.25), M.hedge, s * 5.5, 0.28, z - gap / 2); z -= gap; }
+    }
+    // middle strip: pergolas and bonsai trees
+    for (let z2 = -2 - rnd() * 6; z2 > -CHUNK_LEN + 2; z2 -= 11 + rnd() * 7) {
+      if (rnd() < 0.4) this.kit('pergola', s * (7.4 + rnd() * 0.6), -0.1, z2, rnd() * 0.4, 0.95 + rnd() * 0.2);
+      else this.tree(s * (7.2 + rnd()), -0.1, z2, 0.9 + rnd() * 0.4, rnd);
+    }
+    // houses behind
+    const houses = ['gardenhouse_a', 'gardenhouse_b'].filter((k) => kitHas(k));
+    z = -rnd() * 3;
+    while (houses.length && z > -CHUNK_LEN + 2) {
+      const key = houses[Math.floor(rnd() * houses.length)];
+      const sz = kitSize(key)!, k = 1.25 + rnd() * 0.35;
+      const along = sz.x * k, across = sz.z * k;
+      this.kit(key, (9.2 + across / 2 + rnd() * 0.6) * s, -0.15, z - along / 2, this.facing(s) + (rnd() - 0.5) * 0.3, k);
+      z -= along * 0.95 + 0.4 + rnd();
+    }
+    if (s > 0 && rnd() < 0.22) {
+      const b = this.kit('balloon', (10 + rnd() * 25) * (rnd() < 0.5 ? -1 : 1), 22 + rnd() * 14, -CHUNK_LEN / 2, rnd() * 6, 1.2 + rnd() * 0.6);
+      if (b) { b.traverse((o) => { const m = (o as THREE.Mesh).material as THREE.MeshStandardMaterial | undefined; if (m) m.fog = false; }); b.userData.bob = rnd() * 6; b.userData.y0 = b.position.y; b.userData.balloon = true; this.boats.push(b); }
+    }
+  }
+
+  /** Gag set pieces and posters: the jokes live in the world now, the run never stops for them. */
+  gags: { z: number; cap: string }[] = [];
+  private gagSpot(rnd: () => number) {
+    this.gags = [];
+    const at = this.startDist + CHUNK_LEN / 2;
+    const slot = Math.floor(at / 260); // about one set piece every 260 m
+    const inChunk = slot * 260 + 130;
+    if (inChunk >= this.startDist && inChunk < this.startDist + CHUNK_LEN && inChunk > 150) {
+      const z = -(inChunk - this.startDist), s = slot % 2 ? 1 : -1;
+      const far = this.th.far;
+      const opts: [string, string, number, number][] = far === 'sea'
+        ? [['seagull', 'Meanwhile, a seagull tries to order takeout...', 6.4, -1.75]]
+        : far === 'garden'
+          ? [['raccoonmirror', 'Meanwhile, the Crowd rehearses menace...', 6.2, -0.1]]
+          : [['pigeons', 'Meanwhile, the Pigeon Union votes...', 5.6, -0.8], ['chimneytherapy', 'Meanwhile, at Chimney Therapy...', 6.0, -1.0]];
+      const [key, cap, x, y] = opts[slot % opts.length];
+      if (this.kit(key, s * x, y, z, this.facing(s) + 0.35 * s, 1)) this.gags.push({ z, cap });
+    }
+    // posters of the cutaway gags on boards at the curb
+    if (rnd() < 0.3) {
+      const sd = rnd() < 0.5 ? -1 : 1, pz = -6 - rnd() * (CHUNK_LEN - 12);
+      const img = GAG_POSTERS[Math.floor(rnd() * GAG_POSTERS.length)];
+      const board = new THREE.Mesh(posterGeo, [signWood, signWood, signWood, signWood, posterMat(img), signWood]);
+      board.position.set(sd * 4.7, 3.2, pz);
+      board.rotation.y = -sd * 0.55;
+      this.dyn.add(board);
+      for (const ox of [-1.1, 1.1]) this.put(new THREE.CylinderGeometry(0.08, 0.1, 3.2, 6), M.pole, sd * 4.7 + ox * Math.cos(sd * 0.55), 1.6, pz + ox * Math.sin(sd * 0.55));
     }
   }
 
@@ -381,8 +598,9 @@ export class Chunk {
       if (sz.x > sz.z) b.rotation.y = Math.PI / 2; // lie along the quay
       b.rotation.y += (rnd() - 0.5) * 0.5 + (rnd() < 0.5 ? Math.PI : 0);
       b.scale.multiplyScalar(0.85 + rnd() * 0.3);
-      b.position.set(x, -2.55, z);
-      b.userData.bob = rnd() * 6;
+      const y0 = this.th.far === 'sea' ? -1.95 : -2.55;
+      b.position.set(x, y0, z);
+      b.userData.bob = rnd() * 6; b.userData.y0 = y0;
       this.dyn.add(b);
       this.boats.push(b);
       return;
@@ -413,7 +631,7 @@ export class Chunk {
 
   /** Drift chimney smoke upward (call every frame with the world clock). */
   animateSmoke(time: number) {
-    for (const b of this.boats) { const ph = b.userData.bob as number; b.position.y = -2.55 + Math.sin(time * 1.3 + ph) * 0.08; b.rotation.z = Math.sin(time * 1.1 + ph) * 0.04; }
+    for (const b of this.boats) { const ph = b.userData.bob as number, y0 = (b.userData.y0 as number) ?? -2.55; if (b.userData.balloon) { b.position.y = y0 + Math.sin(time * 0.4 + ph) * 1.2; b.rotation.y += 0.002; continue; } b.position.y = y0 + Math.sin(time * 1.3 + ph) * 0.08; b.rotation.z = Math.sin(time * 1.1 + ph) * 0.04; }
     for (const sp of this.smoke) {
       const u = sp.userData as { x: number; y: number; z: number; ph: number };
       const f = (time * 0.35 + u.ph) % 1;
@@ -449,97 +667,22 @@ export class Chunk {
     // a gate over the street where one district hands over to the next
     const gateD = Math.round((this.startDist + CHUNK_LEN / 2) / DISTRICT_LEN) * DISTRICT_LEN;
     if (gateD > 0 && gateD >= this.startDist && gateD < this.startDist + CHUNK_LEN) this.gate(-(gateD - this.startDist), districtAt(gateD));
-    const have = new Set(kitKeys('bld_'));
+    // one look per chunk (the mix near a border comes from neighbouring chunks differing)
+    const th = (this.th = mid);
+    this.grounds.town.visible = th.far === 'town';
+    this.grounds.sea.visible = th.far === 'sea';
+    this.grounds.garden.visible = th.far === 'garden';
     for (const s of [-1, 1]) {
-      // near row: Tripo houses below the roofline, varied size/turn, with the odd gap
-      let z = -1 - rnd() * 2;
-      while (z > -CHUNK_LEN + 2) {
-        const th = this.themeAt(z, rnd);
-        if (th.far === 'sea' && s < 0) { // harbour: open water right below the roofs, boats moored close
-          const len = 6;
-          this.flat(40, 0.2, len + 0.05, M.water, s * 26, -2.3, z - len / 2);
-          this.flat(0.8, 1.6, len + 0.05, M.terrace, s * 6.4, -2.4, z - len / 2); // quay wall
-          if (rnd() < 0.5) this.boat(s * (9 + rnd() * 6), z - len / 2, rnd);
-          z -= len;
-          continue;
-        }
-        if (th.far === 'garden' && rnd() < 0.55) { // garden: trees and hedges between the houses
-          const len = 3 + rnd() * 3;
-          this.box(3.2, 1.2, len, 0.5, M.leafDark, s * 7.8, -1.6, z - len / 2);
-          this.tree(s * (7.4 + rnd() * 2), -1.2, z - len / 2, 1.1 + rnd() * 0.6, rnd);
-          z -= len;
-          continue;
-        }
-        const kits = th.kits.filter((k) => have.has(k));
-        if (!kits.length) break;
-        if (rnd() < 0.12) { z -= 2 + rnd() * 2; continue; }
-        const key = kits[Math.floor(rnd() * kits.length)];
-        const b = kitClone(key)!, sz = kitSize(key)!;
-        const k = 0.95 + rnd() * 0.4;
-        b.scale.setScalar(k);
-        b.rotation.y = (s > 0 ? -Math.PI / 2 : Math.PI / 2) + (rnd() - 0.5) * 0.5;
-        const along = sz.x * k, across = sz.z * k;
-        b.position.set((7.2 + across / 2 + rnd() * 1.2) * s, -2.9 + rnd() * 1.0, z - along / 2);
-        this.dyn.add(b);
-        z -= along * 0.85 + rnd() * 0.6;
-      }
-      // far row: town houses / open harbour with boats (left side) / garden terraces with trees
-      z = -rnd() * 3;
-      while (z > -CHUNK_LEN + 3) {
-        const th = this.themeAt(z, rnd);
-        const far = th.far === 'sea' && s > 0 ? 'town' : th.far; // harbour: sea on the left, town on the right
-        if (far === 'sea') {
-          const len = 8;
-          if (rnd() < 0.4) this.boat(s * (18 + rnd() * 10), z - len / 2, rnd);
-          z -= len;
-        } else if (far === 'garden') {
-          const len = 4 + rnd() * 3;
-          const tx = s * (13 + rnd() * 5), ty = -2 + rnd() * 2;
-          this.box(5, 1.6, len, 0.3, M.terrace, tx, ty - 0.8, z - len / 2); // terrace step
-          this.box(5.2, 0.3, len + 0.2, 0.12, M.leafDark, tx, ty + 0.05, z - len / 2);
-          const n = 1 + Math.floor(rnd() * 3);
-          for (let i = 0; i < n; i++) this.tree(tx + (rnd() - 0.5) * 3, ty + 0.1, z - rnd() * len, 0.8 + rnd() * 0.7, rnd);
-          z -= len + rnd() * 0.5;
-        } else {
-          const w = 4 + rnd() * 3, h = 4 + rnd() * 6, len = 4 + rnd() * 4;
-          this.building(s, z, w, h, len, rnd, 13 + rnd() * 4, -2.5 + rnd() * 2);
-          z -= len + rnd() * 1.5;
-        }
-      }
-      // chimneys poking out of the near roofs, each with a smoke column
-      const nc = Math.floor(rnd() * (mid.chimneys + 1));
-      for (let i = 0; i < nc; i++) {
-        const t = 0.25 + rnd() * 0.5, cz = -4 - rnd() * (CHUNK_LEN - 8);
-        const cx = s * (4.75 + t * 2.6), cy = -0.35 - t * 1.9;
-        this.box(0.9, 2.6, 0.9, 0.12, M.brick, cx, cy + 1.2, cz);
-        this.box(1.15, 0.28, 1.15, 0.1, M.trim, cx, cy + 2.5, cz);
-        for (let p = 0; p < 6; p++) {
-          const sp = new THREE.Sprite(new THREE.SpriteMaterial({ map: PUFF(), transparent: true, depthWrite: false, opacity: 0.8 }));
-          const ph = p / 6 + rnd() * 0.05;
-          sp.userData = { x: cx, y: cy + 2.8, z: cz, ph };
-          this.dyn.add(sp);
-          this.smoke.push(sp);
-        }
-      }
-      // curb dressing: harbour bollards with rope, garden flower pots
-      for (let z2 = -3 - rnd() * 4; z2 > -CHUNK_LEN + 2; z2 -= 6 + rnd() * 6) {
-        const th = this.themeAt(z2, rnd);
-        if (th.curb === 'bollard') {
-          this.put(geo.cyl.clone(), M.bollard, s * 4.1, 0.75, z2, 0, 0, 0, 0.42, 0.7, 0.42);
-          this.put(geo.sphere.clone(), M.bollard, s * 4.1, 1.1, z2, 0, 0, 0, 0.5, 0.3, 0.5);
-          this.put(new THREE.TorusGeometry(0.26, 0.06, 6, 14), M.rope, s * 4.1, 0.62, z2, Math.PI / 2, 0, 0);
-        } else if (th.curb === 'pot') {
-          this.put(geo.cyl.clone(), M.pot, s * 4.1, 0.6, z2, 0, 0, 0, 0.55, 0.45, 0.55);
-          this.put(geo.sphere.clone(), M.leaf, s * 4.1, 1.0, z2, 0, 0, 0, 0.75, 0.6, 0.75);
-          for (let f = 0; f < 3; f++) this.put(geo.sphere.clone(), f % 2 ? M.flowerWhite : M.flowerPink, s * 4.1 + (rnd() - 0.5) * 0.4, 1.2 + rnd() * 0.15, z2 + (rnd() - 0.5) * 0.4, 0, 0, 0, 0.16, 0.16, 0.16);
-        }
-      }
+      if (th.far === 'sea') this.harbourSide(s, rnd);
+      else if (th.far === 'garden') this.gardenSide(s, rnd);
+      else this.townSide(s, rnd, mid);
     }
+    // a gag set piece or poster now and then (no more pausing cutaways)
+    this.gagSpot(rnd);
     // a funny sign on a post at the curb, now and then
     if (rnd() < 0.45) {
       const sd = rnd() < 0.5 ? -1 : 1, sz = -6 - rnd() * (CHUNK_LEN - 12);
-      const th = THEMES.indexOf(this.themeAt(sz, rnd));
-      const list = SIGNS[th] ?? SIGNS[0];
+      const list = SIGNS[THEMES.indexOf(th)] ?? SIGNS[0];
       const text = list[Math.floor(rnd() * list.length)];
       let face = signFace.get(text);
       if (!face) signFace.set(text, (face = new THREE.MeshStandardMaterial({ map: signTexture(text), roughness: 0.75 })));
@@ -550,7 +693,7 @@ export class Chunk {
       this.put(new THREE.CylinderGeometry(0.07, 0.09, 2.3, 6), M.pole, sd * 4.25, 1.15, sz);
     }
     // a garland strung across the street between two posts, roughly one every ~100 m
-    if (rnd() < 0.4) { const gz = -8 - rnd() * 24; this.garland(gz, rnd, this.themeAt(gz, rnd)); }
+    if (rnd() < (th.far === 'garden' ? 0.35 : 0.65)) { const gz = -8 - rnd() * 24; this.garland(gz, rnd, th); }
     this.flush();
 
     if (safe) {
@@ -635,11 +778,15 @@ export class Chunk {
       depth = 0.3;
     } else if ((kind === 'chimney' || kind === 'crate') && kitHas(kind)) {
       // the jump-over obstacle wears the district's look: fish barrels at the harbour, a flower cart in the gardens
-      const far = kind === 'crate' ? this.themeAt(z).far : 'town';
-      const key = far === 'sea' && kitHas('barrels') ? 'barrels' : far === 'garden' && kitHas('cart') ? 'cart' : kind;
+      // and the tall one too: a cargo pile on the boardwalk, a vine trellis in the gardens
+      const far = this.th.far;
+      const alt = kind === 'crate' ? (far === 'sea' ? 'barrels' : far === 'garden' ? 'cart' : '') : (far === 'sea' ? 'dock' : far === 'garden' ? 'trellis' : '');
+      const key = alt && kitHas(alt) ? alt : kind;
       const m = kitClone(key)!;
-      const h = kitSize(key)!.y;
-      if (key !== kind && h > 1.35) m.scale.multiplyScalar(1.35 / h); // never taller than a jump clears (apex ~2.4 m)
+      const sz = kitSize(key)!;
+      if (kind === 'crate' && key !== kind && sz.y > 1.35) m.scale.multiplyScalar(1.35 / sz.y); // never taller than a jump clears (apex ~2.4 m)
+      if (kind === 'chimney' && key !== kind) m.scale.multiplyScalar(Math.min(2.1 / Math.max(sz.x, sz.z), 3.4 / sz.y)); // fills one lane, too tall to jump
+      if (key === 'trellis') m.rotation.y = 0;
       g.add(m);
       depth = kind === 'chimney' ? 1.5 : kind === 'crate' ? 1.4 : 0.3;
     } else if (kind === 'chimney') {
@@ -669,10 +816,10 @@ export class Chunk {
       for (const x of [-0.7, 0, 0.7]) add(rbox(0.1, 0.18, 0.1, 0.03, M.awningA), x, 2.02, 0);
       depth = 0.3;
     } else {
-      add(rbox(2.2, 0.05, 2.4, 0.02, M.gap), 0, 0.01, 0);
-      for (const s of [-1, 1]) {
-        add(rbox(0.22, 0.14, 2.5, 0.06, M.pathAlt), s * 1.2, 0.04, 0);
-      }
+      // a hole in the roof / missing boards over the water / a little water channel in the gardens
+      const far = this.th.far;
+      add(rbox(2.2, 0.05, 2.4, 0.02, far === 'town' ? M.gap : far === 'sea' ? M.bay : M.water), 0, 0.01, 0);
+      for (const s of [-1, 1]) add(rbox(0.22, 0.14, 2.5, 0.06, far === 'sea' ? M.piling : far === 'garden' ? M.gCurb : M.pathAlt), s * 1.2, 0.04, 0);
       depth = 2.4;
     }
     g.position.set(LANES[lane], 0, z);
