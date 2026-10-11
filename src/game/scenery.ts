@@ -119,10 +119,10 @@ export class Scenery {
   }
 
   /** Follow the scene's horizon colour (districts fade it). */
-  setHorizon(c: THREE.Color) {
+  setHorizon(c: THREE.Color, overhead?: THREE.Color) {
     this.sky.uniforms.bottom.value.copy(c);
     const top = this.sky.uniforms.top.value as THREE.Color;
-    top.copy(c).offsetHSL(-0.02, 0.04, -0.1);
+    if (overhead) top.copy(overhead); else top.copy(c).offsetHSL(-0.02, 0.04, -0.1);
     for (const l of this.layers) l.mat.color.set(0x7a4a3c).lerp(c, l.k);
   }
 }

@@ -35,12 +35,13 @@ const A = (n: string) => `${import.meta.env.BASE_URL}art/${n}.webp`;
 const LIGHT = [
   { sun: 0xffd9a0, si: 2.2, sky: 0xfff0d6, gr: 0xb07a55, hi: 0.7 },
   { sun: 0xd8d0ff, si: 1.7, sky: 0xd6d2ff, gr: 0x5e6f86, hi: 0.95 },
-  { sun: 0xfff6dc, si: 2.3, sky: 0xf0ffe6, gr: 0x86a46a, hi: 0.8 },
+  { sun: 0xffe6c2, si: 1.95, sky: 0xf4f6e4, gr: 0x9a9a6a, hi: 0.8 },
 ];
 const DISTRICTS = [
-  { name: 'Noodle Roofs', img: 'world_01_noodle_roofs', sky: 0xf9c98a, fog: 0xf6b46b },
-  { name: 'Harbour Lights', img: 'world_02_harbour_lights', sky: 0xa9a4d8, fog: 0x9a93c9 },
-  { name: 'Garden Terraces', img: 'world_03_garden_terraces', sky: 0xd8eed6, fog: 0xd2e6cc },
+  // sky = horizon colour, top = overhead colour of the gradient dome (as in the district art)
+  { name: 'Noodle Roofs', img: 'world_01_noodle_roofs', sky: 0xf9c98a, top: 0xe58a5c, fog: 0xf6b46b },
+  { name: 'Harbour Lights', img: 'world_02_harbour_lights', sky: 0xd9b8d6, top: 0x7f86c8, fog: 0xb8a6d2 },
+  { name: 'Garden Terraces', img: 'world_03_garden_terraces', sky: 0xf2ddd0, top: 0xbfe3cb, fog: 0xe8e0cf },
 ];
 const FOODS = ['food_01_noodles', 'food_02_pizza', 'food_03_bubbletea'];
 const CUSTOMERS = [
@@ -56,7 +57,7 @@ const DELIVERY_EVERY = 350; // metres between deliveries
 export class Game {
   readonly renderer: THREE.WebGLRenderer;
   readonly scene = new THREE.Scene();
-  readonly camera = new THREE.PerspectiveCamera(58, 9 / 16, 0.1, 500);
+  readonly camera = new THREE.PerspectiveCamera(55, 9 / 16, 0.1, 500);
   readonly world = new World();
   readonly scenery = new Scenery();
   readonly fox = new FoxActor();
@@ -111,7 +112,8 @@ export class Game {
   }) {
     this.renderer = new THREE.WebGLRenderer({ canvas, antialias: true, powerPreference: 'high-performance' });
     // phones: 1.5x is visually close to 2x/3x at a fraction of the fill cost
-    this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, matchMedia('(pointer: coarse)').matches ? 1.5 : 2));
+    this.basePR = Math.min(window.devicePixelRatio, matchMedia('(pointer: coarse)').matches ? 1.5 : 2);
+    this.renderer.setPixelRatio(this.basePR);
     this.renderer.shadowMap.enabled = true;
     this.renderer.shadowMap.type = THREE.PCFSoftShadowMap;
     this.renderer.toneMapping = THREE.ACESFilmicToneMapping;
@@ -132,6 +134,7 @@ export class Game {
     sun.shadow.radius = 5; sun.shadow.bias = -0.0004; sun.shadow.normalBias = 0.03;
     Object.assign(sun.shadow.camera, { left: -9, right: 9, top: 9, bottom: -9, near: 1, far: 40 });
     this.scene.add(sun, sun.target);
+    try { this.autoQ = Number(localStorage.getItem('tf_q') || 0) || 0; } catch { /* storage may be unavailable */ }
     this.sun = sun;
 
     this.scene.add(this.world.group);
@@ -199,6 +202,40 @@ export class Game {
   private sun: THREE.DirectionalLight;
   private hemi!: THREE.HemisphereLight;
 
+  /**
+   * Quality: 0 full, 1 lighter (lower resolution, smaller shadow map), 2 battery saver
+   * (1x resolution, no shadows). Steps down by itself when the phone can't keep ~50 fps;
+   * the "Battery saver" switch in Settings forces level 2.
+   */
+  private basePR = 1;
+  private autoQ = 0;
+  private saver = false;
+  private q = -1;
+  private ftAcc = 0; private ftN = 0;
+  setSaver(on: boolean) { this.saver = on; this.applyQuality(); }
+  get qualityLevel() { return this.q; }
+  private applyQuality() {
+    const q = this.saver ? 2 : this.autoQ;
+    if (q === this.q) return;
+    this.q = q;
+    this.renderer.setPixelRatio(q === 0 ? this.basePR : q === 1 ? Math.min(this.basePR, 1.25) : 1);
+    this.sun.castShadow = q < 2;
+    const ms = q === 0 ? 1536 : 1024;
+    if (this.sun.shadow.mapSize.x !== ms) { this.sun.shadow.mapSize.set(ms, ms); this.sun.shadow.map?.dispose(); this.sun.shadow.map = null; }
+    this.resize();
+  }
+  /** Average frame time while running; two slow 3-second windows in a row step quality down. */
+  private watchFrames(dt: number) {
+    if (this.state !== 'run' || this.saver || this.autoQ >= 2) { this.ftAcc = 0; this.ftN = 0; return; }
+    this.ftAcc += dt; this.ftN++;
+    if (this.ftAcc < 3) return;
+    const avg = this.ftAcc / this.ftN;
+    this.ftAcc = 0; this.ftN = 0;
+    if (avg > 1 / 48) { this.slowWin++; if (this.slowWin >= 2) { this.slowWin = 0; this.autoQ++; this.applyQuality(); try { localStorage.setItem('tf_q', String(this.autoQ)); } catch { /* private mode */ } } }
+    else this.slowWin = 0;
+  }
+  private slowWin = 0;
+
   resize() {
     const p = this.canvas.parentElement!;
     const w = p.clientWidth, h = p.clientHeight;
@@ -256,7 +293,7 @@ export class Game {
     const bg = this.scene.background as THREE.Color, fog = (this.scene.fog as THREE.Fog).color;
     bg.copy(this._ca.set(DISTRICTS[m.a].sky)).lerp(this._cb.set(DISTRICTS[m.b].sky), m.t);
     fog.copy(this._ca.set(DISTRICTS[m.a].fog)).lerp(this._cb.set(DISTRICTS[m.b].fog), m.t).lerp(bg, 0.6);
-    this.scenery.setHorizon(bg);
+    this.scenery.setHorizon(bg, this._cb.set(DISTRICTS[m.a].top).lerp(this._ca.set(DISTRICTS[m.b].top), m.t));
     this.scenery.setMix(m.a, m.b, m.t);
     // light per district: warm sunset roofs, cool dusk harbour, fresh green gardens
     const L = LIGHT[m.a], R = LIGHT[m.b], k = m.t;
@@ -348,7 +385,9 @@ export class Game {
     requestAnimationFrame((t) => this.loop(t));
     const dt = Math.min(0.1, (now - this.last) / 1000 || 0);
     this.last = now;
-    if (this.hold || this.paused) return; // full-screen overlay (story intro) covers the canvas: save the GPU/battery
+    if (this.hold || this.paused) return;
+    if (this.q < 0) this.applyQuality();
+    this.watchFrames(dt); // full-screen overlay (story intro) covers the canvas: save the GPU/battery
     this.acc += dt;
     const step = 1 / 60;
     while (this.acc >= step) { this.update(step); this.acc -= step; }
@@ -377,7 +416,7 @@ export class Game {
     // a gag set piece coming into view: caption it, the run keeps going
     for (const c of this.world.chunks) for (const g of c.gags as { z: number; cap: string; shown?: boolean }[]) {
       const wz = c.group.position.z + g.z;
-      if (!g.shown && wz > -26 && wz < -8) { g.shown = true; this.showGag(g.cap); }
+      if (!g.shown && wz > -46 && wz < -14) { g.shown = true; this.showGag(g.cap); }
     }
     const difficulty = Math.min(1, this.distance / 2500);
     this.speed = Math.min(MAX_SPEED, BASE_SPEED + this.distance * 0.006);
@@ -592,16 +631,21 @@ export class Game {
     if (this.photo) {
       this.camera.position.copy(this.photo.pos);
       this.camera.lookAt(this.photo.look);
+      this.world.syncInstances(this.camera);
       this.renderer.render(this.scene, this.camera);
       return;
     }
     const f = this.fox.group;
     const cx = f.position.x * 0.5;
-    // low, close chase cam like the key art: the ridge path fills the frame, roofs either side
-    this.camera.position.set(cx, 4.4, 8.2);
-    this.camera.lookAt(cx * 0.7, 1.7, -14);
+    // low, close chase cam like the district art: Marm big in frame, houses close either side.
+    // At speed it eases up and back a touch so obstacles still show ~1.5 s ahead.
+    const k = THREE.MathUtils.clamp((this.speed - BASE_SPEED) / (MAX_SPEED - BASE_SPEED), 0, 1);
+    const wide = this.camera.aspect > 1 ? 1 : 0;
+    this.camera.position.set(cx, 3.25 + k * 0.45 + wide * 0.5, 6.3 + k * 0.9 + wide * 0.8);
+    this.camera.lookAt(cx * 0.7, 1.75 + k * 0.1, -18);
     this.sun.position.set(f.position.x - 6, 14, 8);
     this.sun.target.position.set(f.position.x, 0, 0);
+    this.world.syncInstances(this.camera);
     this.renderer.render(this.scene, this.camera);
   }
 }
