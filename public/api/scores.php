@@ -1,5 +1,6 @@
 <?php
-// Takeout Fox shared leaderboard. GET -> top 20, POST {name, score, dist, tips} -> saves, returns top 20 + rank.
+// Takeout Fox shared leaderboard. GET -> top 20 (+ today's top 20), POST {name, score, dist, tips} -> saves, returns both + ranks.
+// "Today" is the calendar day in Vilnius.
 // Data lives outside the web root when possible (survives deploys), else in ./data (blocked by .htaccess).
 header('Content-Type: application/json; charset=utf-8');
 header('Cache-Control: no-store');
@@ -14,13 +15,15 @@ function load($file) {
   $j = $raw ? json_decode($raw, true) : null;
   return is_array($j) ? $j + ['scores' => [], 'ips' => []] : ['scores' => [], 'ips' => []];
 }
+function dayKey() { return (new DateTime('now', new DateTimeZone('Europe/Vilnius')))->format('Y-m-d'); }
+function todayList($d) { return (isset($d['day']['date']) && $d['day']['date'] === dayKey()) ? $d['day']['scores'] : []; }
 function top($scores, $n) {
   return array_map(fn($e) => ['name' => $e['name'], 'score' => $e['score'], 'dist' => $e['dist'], 'tips' => $e['tips']], array_slice($scores, 0, $n));
 }
 
 if ($_SERVER['REQUEST_METHOD'] === 'GET') {
   $d = load($file);
-  echo json_encode(['top' => top($d['scores'], $SHOW)]);
+  echo json_encode(['top' => top($d['scores'], $SHOW), 'today' => top(todayList($d), $SHOW)]);
   exit;
 }
 if ($_SERVER['REQUEST_METHOD'] !== 'POST') { http_response_code(405); echo '{"error":"method"}'; exit; }
@@ -55,9 +58,17 @@ usort($d['scores'], fn($a, $b) => $b['score'] <=> $a['score']);
 $d['scores'] = array_slice($d['scores'], 0, $KEEP);
 $rank = -1;
 foreach ($d['scores'] as $i => $e) if ($e['id'] === $id) { $rank = $i; break; }
+$day = todayList($d);
+$day[] = ['id' => $id, 'name' => $name, 'score' => $score, 'dist' => $dist, 'tips' => $tips, 't' => $now];
+usort($day, fn($a, $b) => $b['score'] <=> $a['score']);
+$day = array_slice($day, 0, 50);
+$d['day'] = ['date' => dayKey(), 'scores' => $day];
+$rankToday = -1;
+foreach ($day as $i => $e) if ($e['id'] === $id) { $rankToday = $i; break; }
 
 ftruncate($fh, 0); rewind($fh);
 fwrite($fh, json_encode($d));
 fflush($fh); flock($fh, LOCK_UN); fclose($fh);
 
-echo json_encode(['top' => top($d['scores'], $SHOW), 'rank' => ($rank >= 0 && $rank < $SHOW) ? $rank : -1]);
+echo json_encode(['top' => top($d['scores'], $SHOW), 'rank' => ($rank >= 0 && $rank < $SHOW) ? $rank : -1,
+  'today' => top($day, $SHOW), 'rankToday' => ($rankToday >= 0 && $rankToday < $SHOW) ? $rankToday : -1]);

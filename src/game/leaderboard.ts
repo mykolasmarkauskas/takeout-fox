@@ -26,15 +26,15 @@ async function withTimeout<T>(p: Promise<T>, ms = 4000) {
 }
 
 /** Top scores; `global` tells whether they came from the shared board. */
-export async function topScores(): Promise<{ list: Entry[]; global: boolean }> {
+export async function topScores(): Promise<{ list: Entry[]; global: boolean; today: Entry[] | null }> {
   try {
     const r = await withTimeout(fetch(API, { cache: 'no-store' }));
     if (!r.ok || !(r.headers.get('content-type') || '').includes('json')) throw new Error('no api');
     const j = await r.json();
     if (!Array.isArray(j.top)) throw new Error('bad api');
-    return { list: j.top, global: true };
+    return { list: j.top, global: true, today: Array.isArray(j.today) ? j.today : null };
   } catch {
-    return { list: localTop(), global: false };
+    return { list: localTop(), global: false, today: null };
   }
 }
 
@@ -49,10 +49,13 @@ export async function submitScore(name: string, score: number, dist: number, tip
     if (!r.ok || !(r.headers.get('content-type') || '').includes('json')) throw new Error('no api');
     const j = await r.json();
     if (!Array.isArray(j.top)) throw new Error('bad api');
-    return { list: (j.top as Entry[]).map((e, i) => ({ ...e, me: i === j.rank })), global: true };
+    return {
+      list: (j.top as Entry[]).map((e, i) => ({ ...e, me: i === j.rank })), global: true,
+      today: Array.isArray(j.today) ? (j.today as Entry[]).map((e, i) => ({ ...e, me: i === j.rankToday })) : null,
+    };
   } catch {
     let marked = false;
-    return { list: local.map((e) => { const me = !marked && e.name === mine.name && e.score === mine.score; if (me) marked = true; return { ...e, me }; }), global: false };
+    return { list: local.map((e) => { const me = !marked && e.name === mine.name && e.score === mine.score; if (me) marked = true; return { ...e, me }; }), global: false, today: null };
   }
 }
 

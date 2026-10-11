@@ -92,6 +92,8 @@ export class FoxActor {
       this.model = pose;
       this.body.add(pose);
       this.play(this.current, true);
+      this.mixer?.update(0);
+      this.applyLook();
     } catch (e) {
       console.warn('fox model not loaded, keeping placeholder', e);
     }
@@ -158,6 +160,66 @@ export class FoxActor {
 
   private slideK = 0;
   private bones: Map<string, THREE.Object3D> | null = null;
+  // ---- shop look: bag colour (recoloured texture) and an accessory attached to a bone
+  private look: { bag: number | null; acc: string } = { bag: null, acc: 'acc_none' };
+  private origMap: THREE.Texture | null = null;
+  private bagMaps = new Map<number, THREE.Texture>();
+  private accObj: THREE.Object3D | null = null;
+  setLook(bag: number | null, acc: string) { this.look = { bag, acc }; this.applyLook(); }
+  private skinMat(): THREE.MeshStandardMaterial | null {
+    let m: THREE.MeshStandardMaterial | null = null;
+    this.model?.traverse((o) => { if (!m && o instanceof THREE.Mesh && (o.material as THREE.MeshStandardMaterial).map) m = o.material as THREE.MeshStandardMaterial; });
+    return m;
+  }
+  private applyLook() {
+    if (!this.model) return;
+    const mat = this.skinMat();
+    if (mat) {
+      this.origMap ??= mat.map;
+      const want = this.look.bag == null ? this.origMap : this.bagMap(this.look.bag);
+      if (want && mat.map !== want) { mat.map = want; mat.needsUpdate = true; }
+    }
+    if (this.accObj) { this.accObj.removeFromParent(); this.accObj = null; }
+    const head = this.bones?.get('Head'), neck = this.bones?.get('Neck');
+    const acc = accessory(this.look.acc);
+    if (!acc || !head || !neck) return;
+    this.group.updateMatrixWorld(true);
+    const at = (this.look.acc === 'acc_scarf' ? neck : head).getWorldPosition(new THREE.Vector3());
+    acc.position.add(this.group.worldToLocal(at));
+    this.group.add(acc);
+    (this.look.acc === 'acc_scarf' ? neck : head).attach(acc);
+    this.accObj = acc;
+  }
+  /** The model's texture with the teal bag pixels turned to another colour (cached per colour). */
+  private bagMap(color: number) {
+    const hit = this.bagMaps.get(color);
+    if (hit) return hit;
+    const src = this.origMap!, img = src.image as CanvasImageSource & { width: number; height: number };
+    const c = document.createElement('canvas'); c.width = img.width; c.height = img.height;
+    const g = c.getContext('2d', { willReadFrequently: true })!;
+    g.drawImage(img, 0, 0);
+    const data = g.getImageData(0, 0, c.width, c.height), d = data.data;
+    const tgt = new THREE.Color(color), th = { h: 0, s: 0, l: 0 }; tgt.getHSL(th);
+    const px = new THREE.Color(), hsl = { h: 0, s: 0, l: 0 };
+    for (let i = 0; i < d.length; i += 4) {
+      px.setRGB(d[i] / 255, d[i + 1] / 255, d[i + 2] / 255, THREE.SRGBColorSpace);
+      px.getHSL(hsl, THREE.SRGBColorSpace);
+      // the bag (and its darker straps) is the only teal/cyan in Marm's texture
+      if (hsl.h < 0.42 || hsl.h > 0.56 || hsl.s < 0.18 || hsl.l < 0.06) continue;
+      px.setHSL(th.h, Math.min(1, th.s * (0.6 + hsl.s * 0.6)), Math.min(0.95, hsl.l * (th.l / 0.4)), THREE.SRGBColorSpace);
+      const o = { r: 0, g: 0, b: 0 }; px.getRGB(o, THREE.SRGBColorSpace);
+      d[i] = o.r * 255; d[i + 1] = o.g * 255; d[i + 2] = o.b * 255;
+    }
+    g.putImageData(data, 0, 0);
+    const t = new THREE.CanvasTexture(c);
+    t.flipY = src.flipY; t.colorSpace = src.colorSpace; t.wrapS = src.wrapS; t.wrapT = src.wrapT;
+    t.anisotropy = src.anisotropy; t.channel = src.channel;
+    this.bagMaps.set(color, t);
+    return t;
+  }
+
+  /** Debug/look helpers: bone by name. */
+  bone(name: string) { return this.bones?.get(name) ?? null; }
 
   /** Reset transforms after a crash. */
   reset() {
@@ -189,4 +251,39 @@ function oneHop(clip: THREE.AnimationClip) {
   });
   out.resetDuration();
   return out;
+}
+
+/** Shop extras, built in fox space (y up, facing -Z) relative to the joint they hang from. */
+function accessory(id: string): THREE.Object3D | null {
+  const std = (c: number, r = 0.6) => new THREE.MeshStandardMaterial({ color: c, roughness: r });
+  const g = new THREE.Group();
+  if (id === 'acc_scarf') {
+    const red = std(0xe2452f, 0.8), stripe = std(0xf6e3c0, 0.8);
+    const ring = new THREE.Mesh(new THREE.TorusGeometry(0.27, 0.085, 10, 28), red);
+    ring.rotation.x = Math.PI / 2; ring.scale.set(1.12, 0.98, 1); ring.position.y = 0.1;
+    const tail = new THREE.Mesh(new THREE.BoxGeometry(0.14, 0.36, 0.06), red);
+    tail.position.set(0.12, -0.16, -0.24); tail.rotation.z = 0.25;
+    const band = new THREE.Mesh(new THREE.BoxGeometry(0.15, 0.05, 0.065), stripe);
+    band.position.set(0.105, -0.26, -0.24); band.rotation.z = 0.25;
+    g.add(ring, tail, band);
+  } else if (id === 'acc_shades') {
+    const black = new THREE.MeshStandardMaterial({ color: 0x151515, roughness: 0.15, metalness: 0.3 });
+    for (const sx of [-1, 1]) {
+      const lens = new THREE.Mesh(new THREE.CylinderGeometry(0.1, 0.1, 0.03, 20), black);
+      lens.rotation.x = Math.PI / 2; lens.scale.set(1.15, 1, 0.85); lens.position.set(sx * 0.12, 0, 0);
+      g.add(lens);
+    }
+    const bridge = new THREE.Mesh(new THREE.BoxGeometry(0.08, 0.025, 0.025), black);
+    g.add(bridge);
+    g.position.set(0, 0.27, -0.64); g.scale.setScalar(1.05);
+  } else if (id === 'acc_chef') {
+    const white = std(0xfdfbf6, 0.7);
+    const band = new THREE.Mesh(new THREE.CylinderGeometry(0.21, 0.21, 0.16, 24), white);
+    const puff = new THREE.Mesh(new THREE.SphereGeometry(0.27, 20, 14), white);
+    puff.scale.set(1, 0.75, 1); puff.position.y = 0.2;
+    g.add(band, puff);
+    g.position.set(0, 0.66, 0.06); g.rotation.x = -0.12; g.scale.setScalar(1.3);
+  } else return null;
+  g.traverse((o) => { if (o instanceof THREE.Mesh) o.castShadow = true; });
+  return g;
 }

@@ -1,6 +1,7 @@
 import { introSeen, playIntro } from './game/intro';
 import { Game } from './game/game';
-import { renderBoard, savedName, submitScore, topScores } from './game/leaderboard';
+import { renderBoard, savedName, submitScore, topScores, type Entry } from './game/leaderboard';
+import { ACHIEVEMENTS, Progress, SHOP } from './game/progress';
 
 const $ = (id: string) => document.getElementById(id)!;
 const game = new Game($('c') as HTMLCanvasElement, {
@@ -67,18 +68,104 @@ $('replayIntro').addEventListener('click', () => {
 });
 
 // ---- leaderboard
+let boardData: { list: Entry[]; global: boolean; today: Entry[] | null } | null = null;
+let boardTab: 'all' | 'today' = 'all';
+const drawBoard = () => {
+  if (!boardData) return;
+  $('tabAll').classList.toggle('on', boardTab === 'all'); $('tabToday').classList.toggle('on', boardTab === 'today');
+  show('tabToday', !!boardData.today); if (!boardData.today) boardTab = 'all';
+  renderBoard($('boardList'), boardTab === 'today' ? boardData.today! : boardData.list, boardData.global);
+};
+$('tabAll').addEventListener('click', () => { click(); boardTab = 'all'; drawBoard(); });
+$('tabToday').addEventListener('click', () => { click(); boardTab = 'today'; drawBoard(); });
 $('menuBoard').addEventListener('click', async (e) => {
   e.stopPropagation(); click();
   show('board', true);
   $('boardList').textContent = 'Loading…';
-  const { list, global } = await topScores();
-  renderBoard($('boardList'), list, global);
+  boardData = await topScores();
+  drawBoard();
 });
 $('closeBoard').addEventListener('click', () => { click(); show('board', false); });
+// ---- progress: tip bank, daily tasks, achievements, shop
+const progress = new Progress();
+const esc = (t: string) => t.replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]!));
+const refreshBank = () => {
+  $('menuBank').textContent = `💰 ${progress.bank} tips`;
+  $('shopBank').textContent = `💰 ${progress.bank} tips`;
+  let seen = ''; try { seen = localStorage.getItem('tf_tasks_seen') || ''; } catch { /* private mode */ }
+  show('tasksDot', seen !== progress.tasks().map((t) => t.id + t.done).join());
+};
+const applyLook = () => {
+  const bag = SHOP.find((i) => i.id === progress.bag);
+  game.fox.setLook(bag?.color ?? null, progress.acc);
+};
+const renderTasks = () => {
+  $('taskList').innerHTML = progress.tasks().map((t) => `<div class="task${t.done ? ' done' : ''}"><b>${t.done ? '✅ ' : ''}${esc(t.text)}</b><div class="bar"><i style="width:${Math.round((t.best / t.goal) * 100)}%"></i></div><div class="meta"><span>${t.done ? 'Done!' : `${Math.floor(t.best)} / ${t.goal}`}</span><span>+${t.reward} 💰</span></div></div>`).join('');
+  $('achList').innerHTML = ACHIEVEMENTS.map((a) => `<div class="ach${progress.hasAch(a.id) ? '' : ' locked'}"><span class="ic">${progress.hasAch(a.id) ? '🏅' : '🔒'}</span><div><b>${esc(a.name)}</b><small>${esc(a.text)} · +${a.reward} 💰</small></div></div>`).join('');
+  try { localStorage.setItem('tf_tasks_seen', progress.tasks().map((t) => t.id + t.done).join()); } catch { /* private mode */ }
+  refreshBank();
+};
+const renderShop = () => {
+  const cell = (kind: 'bag' | 'acc') => SHOP.filter((i) => i.kind === kind).map((i) => {
+    const owned = progress.owns(i.id), on = (kind === 'bag' ? progress.bag : progress.acc) === i.id;
+    const label = on ? 'Wearing' : owned ? 'Wear' : `${i.price} 💰`;
+    return `<button class="item${on ? ' on' : ''}${!owned && progress.bank < i.price ? ' locked' : ''}" data-id="${i.id}" type="button"><i class="sw" style="background:${i.swatch}"></i><b>${esc(i.name)}</b><span>${label}</span></button>`;
+  }).join('');
+  $('shopBags').innerHTML = cell('bag'); $('shopAcc').innerHTML = cell('acc');
+  refreshBank();
+};
+const onItem = (e: Event) => {
+  const b = (e.target as HTMLElement).closest('.item') as HTMLElement | null;
+  if (!b) return;
+  const id = b.dataset.id!;
+  if (!progress.owns(id)) {
+    if (!progress.buy(id)) { game.audio.play('boing'); b.animate([{ transform: 'translateX(-4px)' }, { transform: 'translateX(4px)' }, { transform: 'none' }], 200); return; }
+    game.audio.play('coin', 0.8);
+  } else click();
+  progress.equip(id); applyLook(); renderShop();
+};
+$('shopBags').addEventListener('click', onItem); $('shopAcc').addEventListener('click', onItem);
+$('menuTasks').addEventListener('click', (e) => { e.stopPropagation(); click(); renderTasks(); show('tasks', true); });
+$('closeTasks').addEventListener('click', () => { click(); show('tasks', false); });
+$('menuShop').addEventListener('click', (e) => { e.stopPropagation(); click(); renderShop(); show('shop', true); });
+$('closeShop').addEventListener('click', () => { click(); show('shop', false); });
+refreshBank(); applyLook();
+
+// toasts for tasks and achievements finished mid-run (the run keeps going)
+const toastQ: string[] = [];
+let toastBusy = false;
+const toast = (t: string) => { toastQ.push(t); if (!toastBusy) nextToast(); };
+const nextToast = () => {
+  const t = toastQ.shift();
+  if (!t) { toastBusy = false; return; }
+  toastBusy = true;
+  const el = $('toast'); el.textContent = t; el.classList.add('on');
+  setTimeout(() => { el.classList.remove('on'); setTimeout(nextToast, 350); }, 2200);
+};
+const checkProgress = () => {
+  const r = progress.check(game.run);
+  for (const t of r.tasks) { toast(`✅ ${t.text}  +${t.reward} 💰`); game.audio.play('coin', 1.5); }
+  for (const a of r.ach) { toast(`🏅 ${a.name}  +${a.reward} 💰`); game.audio.play('coin', 1.5); }
+};
+setInterval(() => { if (game.state === 'run' && !game.paused) checkProgress(); }, 500);
+let prevBest = 0; try { prevBest = Number(localStorage.getItem('tf_best') || 0); } catch { /* private mode */ }
+
 let lastRun = { score: 0, dist: 0, tips: 0, saved: false };
 const nameInput = $('nameInput') as HTMLInputElement;
 game.onOver = async (score, dist, tips) => {
   lastRun = { score, dist, tips, saved: false };
+  checkProgress();
+  progress.bankTips(tips);
+  const near = progress.nearest();
+  const lines = [
+    `<div class="line"><span>Tips banked</span><span class="gain">+${tips} 💰 (${progress.bank})</span></div>`,
+    score > prevBest && prevBest > 0 ? '<div class="line"><span>🎉 New best score!</span></div>'
+      : prevBest > 0 ? `<div class="line"><span>To your best</span><span>${prevBest - score} pts</span></div>` : '',
+    near ? `<div class="line"><span>🎯 ${esc(near.text)}</span><span>${Math.floor(near.best)}/${near.goal}</span></div>` : '<div class="line"><span>✅ All daily tasks done!</span></div>',
+  ];
+  $('overGoals').innerHTML = lines.join('');
+  prevBest = Math.max(prevBest, score);
+  refreshBank();
   nameInput.value = savedName();
   show('nameRow', score > 0);
   $('overList').textContent = '';

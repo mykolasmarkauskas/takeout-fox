@@ -1,6 +1,7 @@
 import * as THREE from 'three';
 import { createRaccoon, animateRaccoon, Raccoon, loadRaccoonGLB, raccoonInstance } from './raccoon';
 import { Scenery, PUFF } from './scenery';
+import { newRunStats, type RunStats } from './progress';
 import { districtAt, districtMix, FOG_END } from './world';
 import { RoomEnvironment } from 'three/examples/jsm/environments/RoomEnvironment.js';
 import { Audio, SfxName } from './audio';
@@ -294,7 +295,11 @@ export class Game {
     this.bubbleT = ms / 1000;
   }
 
+  /** Per-run counters for daily tasks and achievements. */
+  run: RunStats = newRunStats();
+  private cleanFrom = 0;
   resetRun() {
+    this.run = newRunStats(); this.cleanFrom = 0;
     this.world.reset((Math.random() * 1e9) | 0);
     this.distance = 0; this.coins = 0; this.speed = BASE_SPEED;
     this.lane = 1; this.x = 0; this.y = 0; this.vy = 0; this.slideT = 0;
@@ -387,11 +392,12 @@ export class Game {
   }
   private doJump() {
     this.vy = JUMP_V; this.slideT = 0; this.jumpBuf = 0; this.sfx('jump');
+    if (this.state === 'run') this.run.jumps++;
   }
   slide() {
     if (this.state !== 'run' || this.paused) return;
     if (this.y > 0.01) { this.vy = Math.min(this.vy, -JUMP_V * 1.2); this.slideBuf = 0.3; return; } // fast-fall, slide on landing
-    this.slideT = SLIDE_TIME; this.sfx('swipe', 0.8);
+    this.slideT = SLIDE_TIME; this.sfx('swipe', 0.8); this.run.slides++;
   }
 
   // ---- loop
@@ -450,6 +456,7 @@ export class Game {
       amb.tick(dt);
     }
     this.updateFx(dt);
+    if (this.state === 'run') { this.run.dist = this.distance; this.run.bestClean = Math.max(this.run.bestClean, this.distance - this.cleanFrom); }
 
     if (this.state === 'run') this.updateRun(dt);
     else if (this.state === 'crash') this.updateCrash(dt);
@@ -491,7 +498,7 @@ export class Game {
       if (this.y < -0.001 && this.vy < -6) { this.sfx('land'); this.dust(this.x, 6); }
       this.y = 0; this.vy = 0;
       if (this.jumpBuf > 0) this.doJump();
-      else if (this.slideBuf > 0) { this.slideBuf = 0; this.slideT = SLIDE_TIME; this.sfx('swipe', 0.8); }
+      else if (this.slideBuf > 0) { this.slideBuf = 0; this.slideT = SLIDE_TIME; this.sfx('swipe', 0.8); this.run.slides++; }
     }
     if (this.slideT > 0) this.slideT -= dt;
     const sliding = this.slideT > 0 && this.y < 0.05;
@@ -527,6 +534,7 @@ export class Game {
         if (Math.abs(z) < 0.8 && k.lane === this.nearestLane() && Math.abs(k.mesh.position.y - (this.y + 1.0)) < 1.3) {
           k.taken = true; k.mesh.visible = false; this.coins++; this.sfx('coin', 1 + (this.coins % 8) * 0.04);
           this.sparkle(k.mesh.position.x, k.mesh.position.y, z);
+          this.run.tips++; this.run.tipsD[districtAt(this.distance)]++;
           if (this.coins % 15 === 0) this.say(pick(BARKS.coin));
         }
       }
@@ -559,7 +567,7 @@ export class Game {
   }
 
   private collect(kind: 'hotbag' | 'chilli' | 'umbrella') {
-    this.buzz(25);
+    this.buzz(25); this.run.pickups++;
     if (kind === 'hotbag') { this.shield = true; this.sfx('hot_bag'); this.say('Hot bag! Shielded.'); }
     else if (kind === 'chilli') { this.dashT = 4; this.sfx('chilli_whoosh'); this.say('Chilli dash!'); this.shakeT = 0.4; this.shakeA = 0.12; }
     else { this.floatT = 8; this.sfx('umbrella_open'); this.say('Floaty umbrella!'); }
@@ -587,7 +595,7 @@ export class Game {
       return;
     }
     if (this.time - this.lastHit < HIT_WINDOW) { this.crash(kind); return; }
-    this.lastHit = this.time;
+    this.lastHit = this.time; this.cleanFrom = this.distance;
     this.buzz(70); this.shakeT = 0.35; this.shakeA = 0.22; this.dust(this.x, 8);
     this.chaseGap = 2.2;
     this.speed *= 0.8;
