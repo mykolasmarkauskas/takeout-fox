@@ -1,6 +1,7 @@
 import * as THREE from 'three';
 import { createRaccoon, animateRaccoon, Raccoon, loadRaccoonGLB, raccoonInstance } from './raccoon';
 import { Scenery } from './scenery';
+import { districtAt } from './world';
 import { RoomEnvironment } from 'three/examples/jsm/environments/RoomEnvironment.js';
 import { Audio, SfxName } from './audio';
 import { BASE_SPEED, COLORS, GRAVITY, HIT_WINDOW, JUMP_V, LANES, MAX_SPEED, SLIDE_TIME } from './constants';
@@ -313,7 +314,7 @@ export class Game {
     if (this.customerT > 0 && (this.customerT -= dt) <= 0) this.ui.customer.classList.remove('on');
     if (this.districtT > 0 && (this.districtT -= dt) <= 0) this.ui.district.classList.remove('on');
     if (this.skyK < 1) {
-      this.skyK = Math.min(1, this.skyK + dt / 2);
+      this.skyK = Math.min(1, this.skyK + dt / 5); // slow, smooth change of light between districts
       (this.scene.background as THREE.Color).copy(this.skyFrom).lerp(this.skyTo, this.skyK);
       (this.scene.fog as THREE.Fog).color.copy(this.scene.background as THREE.Color).lerp(new THREE.Color(this.fogTo), 0.4);
       this.scenery.setHorizon(this.scene.background as THREE.Color);
@@ -343,7 +344,7 @@ export class Game {
     const dz = this.speed * dt;
     this.world.advance(dz, difficulty);
     this.distance += dz;
-    this.setDistrict(Math.floor(this.distance / 700) % DISTRICTS.length, true);
+    this.setDistrict(districtAt(this.distance), true);
     if (this.distance >= this.nextDelivery) { this.nextDelivery += DELIVERY_EVERY; this.deliver(); }
 
     // fox motion
