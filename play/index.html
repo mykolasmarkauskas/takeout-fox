@@ -1,0 +1,179 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no" />
+<meta name="theme-color" content="#f6a23a" />
+<link rel="icon" type="image/png" href="/favicon.png" />
+<link rel="apple-touch-icon" href="/icons/icon-180.png" />
+<link rel="manifest" href="/manifest.webmanifest" />
+<meta name="apple-mobile-web-app-capable" content="yes" />
+<title>Play Takeout Fox: Free Endless Runner in Your Browser</title>
+<link rel="canonical" href="https://takeoutfox.com/play/" />
+<meta property="og:image" content="https://takeoutfox.com/og.jpg" />
+<meta name="description" content="Run, dodge and deliver. Help Marm the fox courier get the takeout through before the Hangry Crowd catches up." />
+<style>
+  html,body{margin:0;height:100%;background:#2a1b14;overflow:hidden;touch-action:none;font-family:system-ui,-apple-system,"Segoe UI",sans-serif}
+  #stage{position:fixed;inset:0;display:flex;align-items:center;justify-content:center}
+  #frame{position:relative;overflow:hidden;height:100%;aspect-ratio:9/16;max-width:100%;background:#f9c98a}
+  canvas{display:block;width:100%;height:100%}
+  .hud{position:absolute;left:0;right:0;top:0;padding:calc(10px + env(safe-area-inset-top)) 14px 0;display:flex;justify-content:space-between;color:#fff;font-weight:800;text-shadow:0 2px 0 rgba(0,0,0,.35);pointer-events:none;font-size:clamp(16px,4.4vw,26px)}
+  .bubble{position:absolute;left:50%;top:22%;transform:translateX(-50%) scale(.9);background:#fff;color:#3b2417;padding:8px 14px;border-radius:16px;font-weight:700;font-size:clamp(14px,4vw,22px);opacity:0;transition:opacity .15s,transform .15s;pointer-events:none;white-space:normal;max-width:86%;width:max-content;text-align:center;box-shadow:0 3px 0 rgba(0,0,0,.25)}
+  .bubble.on{opacity:1;transform:translateX(-50%) scale(1)}
+  .panel{position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:14px;background:rgba(60,30,15,.55);color:#fff;text-align:center;padding:24px}
+  .panel h1{margin:0;font-size:clamp(34px,10vw,64px);text-shadow:0 4px 0 rgba(0,0,0,.35)}
+  .panel p{margin:0;font-size:clamp(14px,3.8vw,20px);opacity:.95}
+  .link{background:none;border:0;color:#fff;font-weight:700;font-size:clamp(14px,3.8vw,18px);text-decoration:underline;cursor:pointer;opacity:.9}
+  .intro{position:absolute;inset:0;z-index:20;display:flex;flex-direction:column;background:#1e120c;color:#fff7e6;transition:opacity .25s}
+  .intro.out{opacity:0}
+  .intro-frame{position:relative;flex:1;min-height:0;cursor:pointer;overflow:hidden;width:100%;max-width:calc((100dvh - 70px) * 0.6);margin:0 auto;border-radius:0 0 18px 18px}
+  .intro-frame img{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;opacity:0;transform:scale(1.06)}
+  .intro-frame img.in{animation:introIn .6s ease-out forwards, introPan 7s ease-out .6s forwards}
+  @keyframes introIn{to{opacity:1;transform:scale(1.03)}}
+  @keyframes introPan{from{transform:scale(1.03)}to{transform:scale(1.0)}}
+  .intro-text{position:absolute;left:14px;right:14px;bottom:14px;background:rgba(255,247,230,.95);color:#3b2116;border-radius:16px;padding:14px 16px;font-weight:700;font-size:clamp(15px,4.2vw,20px);line-height:1.35;box-shadow:0 6px 0 rgba(0,0,0,.25)}
+  .intro-bar{display:flex;align-items:center;gap:12px;padding:12px 16px calc(12px + env(safe-area-inset-bottom))}
+  .intro-dots{display:flex;gap:6px;flex:1}
+  .intro-dots i{width:9px;height:9px;border-radius:50%;background:rgba(255,247,230,.35)}
+  .intro-dots i.on{background:#ff7a1a}
+  .intro-skip{background:none;border:0;color:#fff7e6;opacity:.75;font-weight:700;font-size:16px;cursor:pointer}
+  .intro .btn{padding:10px 26px;font-size:20px}
+  @media (prefers-reduced-motion: reduce){.intro-frame img.in{animation:none;opacity:1;transform:none}}
+  .btn{background:#ff7a1a;color:#fff;border:0;border-radius:999px;padding:14px 34px;font-size:clamp(18px,5vw,28px);font-weight:800;box-shadow:0 5px 0 #b34a00;cursor:pointer}
+  .btn:active{transform:translateY(3px);box-shadow:0 2px 0 #b34a00}
+
+  .menu{background:#f6a23a url(/art/key_poster.webp) center/cover no-repeat;justify-content:space-between;padding:8% 24px calc(6% + env(safe-area-inset-bottom))}
+  .menu h1{color:#fff;-webkit-text-stroke:2px #8a3a12;paint-order:stroke fill;font-size:clamp(40px,12vw,76px);line-height:.95}
+  .menu p{background:rgba(60,30,15,.55);padding:6px 12px;border-radius:12px}
+  .card{position:absolute;left:50%;top:44%;width:58%;transform:translate(-50%,-50%) scale(0) rotate(-8deg);opacity:0;pointer-events:none;filter:drop-shadow(0 8px 0 rgba(0,0,0,.25))}
+  .card.on{animation:pop .7s cubic-bezier(.2,1.6,.4,1) forwards}
+  @keyframes pop{0%{transform:translate(-50%,-50%) scale(0) rotate(-12deg);opacity:0}60%{opacity:1}100%{transform:translate(-50%,-50%) scale(1) rotate(3deg);opacity:1}}
+  .order{position:absolute;top:calc(8px + env(safe-area-inset-top));left:50%;transform:translateX(-50%);width:clamp(46px,13vw,70px);height:clamp(46px,13vw,70px);background:rgba(255,255,255,.88);border-radius:50%;display:flex;align-items:center;justify-content:center;box-shadow:0 3px 0 rgba(0,0,0,.25);pointer-events:none}
+  .order img{width:78%;height:78%;object-fit:contain}
+  .district{position:absolute;left:0;right:0;top:15%;display:flex;justify-content:center;transform:translateY(-24px);opacity:0;transition:transform .45s cubic-bezier(.2,1.4,.4,1),opacity .35s;pointer-events:none}
+  .district.on{transform:none;opacity:1}
+  .district img{display:none}
+  .district span{background:#b8321f;color:#fff7e6;font-weight:900;font-size:clamp(15px,4.2vw,24px);letter-spacing:.06em;text-transform:uppercase;padding:6px 18px;border-radius:8px;border:3px solid #f4dfb8;box-shadow:0 4px 0 rgba(0,0,0,.3)}
+  .customer{position:absolute;right:-60%;bottom:16%;width:46%;display:flex;flex-direction:column;align-items:flex-end;transition:right .4s cubic-bezier(.2,1.4,.4,1);pointer-events:none}
+  .customer.on{right:2%}
+  .customer img{width:70%;filter:drop-shadow(0 6px 0 rgba(0,0,0,.25))}
+  .customer div{background:#fff;color:#3b2417;padding:6px 12px;border-radius:14px;font-weight:800;font-size:clamp(13px,3.6vw,20px);margin-bottom:-8px;z-index:1;box-shadow:0 3px 0 rgba(0,0,0,.25)}
+  #over img.crowd{width:80%;filter:drop-shadow(0 6px 0 rgba(0,0,0,.3))}
+  .icon-btn{position:absolute;z-index:6;width:46px;height:46px;border-radius:50%;border:0;background:rgba(255,255,255,.9);color:#5a2a14;font-size:20px;font-weight:900;box-shadow:0 3px 0 rgba(0,0,0,.25);cursor:pointer;display:flex;align-items:center;justify-content:center}
+  .icon-btn:active{transform:translateY(2px);box-shadow:0 1px 0 rgba(0,0,0,.25)}
+  #pauseBtn{top:calc(46px + env(safe-area-inset-top));right:12px}
+  #menuSettings{top:calc(10px + env(safe-area-inset-top));right:14px}
+  #menuBoard{top:calc(10px + env(safe-area-inset-top));left:14px}
+  .sheet{position:absolute;inset:0;z-index:12;display:flex;align-items:center;justify-content:center;background:rgba(40,20,10,.62);padding:20px}
+  .sheet .box{width:min(100%,360px);max-height:100%;overflow:auto;background:#fff6e6;color:#3b2116;border-radius:22px;padding:20px 18px;box-shadow:0 8px 0 rgba(0,0,0,.25);display:flex;flex-direction:column;gap:12px;text-align:center}
+  .sheet h2{margin:0;font-size:28px}
+  .sheet .btn{width:100%}
+  .btn.alt{background:#2e9e91;box-shadow:0 5px 0 #1d6b62}
+  .btn.ghost{background:#e8d6bf;color:#5a2a14;box-shadow:0 5px 0 #c4ab8c}
+  .set-row{display:flex;align-items:center;gap:10px;text-align:left;font-weight:700}
+  .set-row span{flex:0 0 112px}
+  .set-row input[type=range]{flex:1;accent-color:#ff7a1a}
+  .set-row input[type=checkbox]{width:24px;height:24px;accent-color:#ff7a1a;flex:0 0 auto}
+  .set-note{font-weight:600;opacity:.65;font-size:13px}
+  .lb ol{margin:0;padding:0;list-style:none;counter-reset:r}
+  .lb li{counter-increment:r;display:flex;gap:8px;align-items:center;padding:7px 10px;border-radius:10px;font-weight:700}
+  .lb li:nth-child(odd){background:#f4e4cc}
+  .lb li::before{content:counter(r);width:22px;color:#b35a1e}
+  .lb li span{flex:1;text-align:left;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .lb li.me{background:#ffcf8a}
+  .lb-head{font-weight:900;margin-bottom:6px}
+  .lb-empty{opacity:.7}
+  .name-row{display:flex;gap:8px}
+  .name-row input{flex:1;min-width:0;border:2px solid #e2c49c;border-radius:12px;padding:10px;font-size:17px;font-weight:700;color:#3b2116;background:#fff}
+  .name-row .btn{width:auto;padding:10px 16px;font-size:17px}
+  #over .row{display:flex;gap:10px;width:min(100%,360px)}
+  #over .row .btn{flex:1;padding:12px 10px;font-size:20px}
+  #over .lb{width:min(100%,360px);background:rgba(255,246,230,.95);color:#3b2116;border-radius:18px;padding:12px}
+  .menu-row{display:flex;gap:10px;justify-content:center;flex-wrap:wrap}
+  .menu-top,.menu-bot{display:flex;flex-direction:column;align-items:center;gap:10px}
+  .menu-bot{gap:12px}
+  .menu .hint{background:rgba(60,30,15,.55);padding:5px 12px;border-radius:12px;font-size:clamp(12px,3.3vw,15px)}
+  .menu .hint .link{font-size:inherit;padding:0}
+  .chip{border:0;border-radius:999px;padding:9px 16px;font-weight:900;font-size:clamp(14px,3.8vw,18px);background:rgba(255,246,230,.95);color:#5a2a14;box-shadow:0 4px 0 rgba(0,0,0,.25);cursor:pointer;position:relative}
+  .chip:active{transform:translateY(2px);box-shadow:0 2px 0 rgba(0,0,0,.25)}
+  .chip .dot{position:absolute;top:-4px;right:-4px;width:14px;height:14px;border-radius:50%;background:#e2452f;border:2px solid #fff}
+  .bank{font-weight:900;background:rgba(60,30,15,.6);padding:5px 14px;border-radius:999px;font-size:clamp(14px,3.8vw,18px)}
+  .task{display:flex;flex-direction:column;gap:5px;text-align:left;background:#f4e4cc;border-radius:14px;padding:10px 12px}
+  .task.done{background:#d9f0d2}
+  .task b{font-size:15px}
+  .task .meta{display:flex;justify-content:space-between;font-size:13px;font-weight:700;opacity:.8}
+  .bar{height:9px;border-radius:9px;background:#e2c49c;overflow:hidden}
+  .bar i{display:block;height:100%;background:#ff7a1a;border-radius:9px;transition:width .4s}
+  .task.done .bar i{background:#3aa65a}
+  .ach{display:flex;gap:10px;align-items:center;text-align:left;padding:8px 6px;font-size:14px;border-bottom:1px solid #f0dcc0}
+  .ach:last-child{border-bottom:0}
+  .ach .ic{font-size:24px;width:30px;text-align:center;flex:0 0 auto}
+  .ach-body{flex:1;display:flex;flex-direction:column;gap:4px;min-width:0}
+  .ach-top{display:flex;justify-content:space-between;align-items:center;gap:8px}
+  .ach small{display:block;opacity:.75;font-weight:600}
+  .ach.done{opacity:.7}
+  .stars{display:inline-flex;gap:3px;flex:0 0 auto}
+  .stars i{width:9px;height:9px;border-radius:50%;background:#e2c49c;display:inline-block}
+  .stars i.on{background:#f2b51d;box-shadow:0 0 0 1px #c98a00}
+  .sub{margin:4px 0 0;font-size:18px;text-align:left}
+  .shop{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+  .item{border:2px solid #e2c49c;border-radius:14px;padding:10px 8px;display:flex;flex-direction:column;align-items:center;gap:6px;background:#fff;cursor:pointer;font:inherit;color:inherit}
+  .item.on{border-color:#ff7a1a;box-shadow:0 0 0 3px #ffcf8a}
+  .item .sw{width:38px;height:38px;border-radius:50%;border:3px solid rgba(0,0,0,.12)}
+  .item b{font-size:13px;line-height:1.15}
+  .item span{font-size:13px;font-weight:800;color:#b35a1e}
+  .item.locked span::before{content:'🔒 '}
+  .toast{position:absolute;left:50%;top:calc(110px + env(safe-area-inset-top));transform:translate(-50%,-14px);opacity:0;transition:opacity .3s,transform .3s cubic-bezier(.2,1.4,.4,1);background:#2e9e91;color:#fff;font-weight:900;padding:8px 16px;border-radius:14px;box-shadow:0 4px 0 rgba(0,0,0,.25);pointer-events:none;z-index:5;max-width:88%;text-align:center;font-size:clamp(13px,3.6vw,17px)}
+  .toast.on{opacity:1;transform:translate(-50%,0)}
+  .goals{width:min(100%,360px);background:rgba(255,246,230,.95);color:#3b2116;border-radius:18px;padding:10px 12px;display:flex;flex-direction:column;gap:6px;text-align:left;font-weight:700;font-size:14px}
+  .goals .line{display:flex;justify-content:space-between;gap:8px}
+  .goals .gain{color:#2e7d4b;font-weight:900}
+  .tabs{display:flex;gap:6px;justify-content:center}
+  .tabs button{border:0;border-radius:999px;padding:6px 14px;font-weight:800;background:#e8d6bf;color:#5a2a14;cursor:pointer}
+  .tabs button.on{background:#ff7a1a;color:#fff}
+  .ticker{position:absolute;left:0;right:0;bottom:calc(8px + env(safe-area-inset-bottom));height:32px;display:flex;align-items:center;background:rgba(42,27,20,.84);color:#fff7e6;font:800 clamp(13px,3.6vw,16px) system-ui;pointer-events:none;z-index:4;transform:translateY(60px);transition:transform .35s cubic-bezier(.2,1.3,.4,1);overflow:hidden}
+  .ticker.on{transform:none}
+  .tk-tag{flex:0 0 auto;height:100%;display:flex;align-items:center;padding:0 10px;background:#2e9e91;font-size:11px;letter-spacing:.08em;z-index:1;box-shadow:4px 0 8px rgba(0,0,0,.3)}
+  .ticker.breaking .tk-tag{background:#d8342b;animation:tkblink 1s steps(2) 3}
+  @keyframes tkblink{50%{opacity:.55}}
+  .tk-win{flex:1;height:100%;overflow:hidden;position:relative}
+  .tk-run{position:absolute;left:0;top:0;height:100%;display:flex;align-items:center;gap:8px;white-space:nowrap;will-change:transform}
+  .tk-run img{height:26px;width:26px;object-fit:cover;border-radius:6px;border:2px solid #fff7e6}
+  .hidden{display:none}
+</style>
+  <script type="module" crossorigin src="/assets/play-B0FFNLjR.js"></script>
+  <link rel="modulepreload" crossorigin href="/assets/modulepreload-polyfill-B5Qt9EMX.js">
+</head>
+<body>
+<div id="stage"><div id="frame">
+  <canvas id="c"></canvas>
+  <div class="hud"><span id="score">0 m</span><span id="coins">0 tips</span></div>
+  <div class="order"><img id="orderImg" alt=""></div>
+  <div class="district" id="district"><img id="districtImg" alt="" hidden><span id="districtName"></span></div>
+  <div class="customer" id="customer"><div id="customerText"></div><img id="customerImg" alt=""></div>
+  <img class="card" id="card" alt="">
+  <div class="bubble" id="bubble"></div>
+  <button class="icon-btn hidden" id="pauseBtn" type="button" aria-label="Pause">❚❚</button>
+  <div class="panel menu" id="menu"><button class="icon-btn" id="menuBoard" type="button" aria-label="Top scores">🏆</button><button class="icon-btn" id="menuSettings" type="button" aria-label="Settings">⚙︎</button><div class="menu-top"><h1>Takeout Fox</h1><span class="bank" id="menuBank">💰 0</span></div><div class="menu-bot"><button class="btn" id="play">Run!</button><div class="menu-row"><button class="chip" id="menuTasks" type="button">🎯 Tasks &amp; goals<i class="dot hidden" id="tasksDot"></i></button><button class="chip" id="menuShop" type="button">🛍 Shop</button></div><p class="hint">Swipe or arrow keys: left, right, jump, slide · <button class="link" id="story" type="button">Story</button></p></div></div>
+  <div class="toast" id="toast"></div>
+  <div class="panel hidden" id="over"><h1 id="overTitle">Dropped!</h1><p id="overText"></p><div class="goals" id="overGoals"></div>
+    <div class="lb" id="overBoard">
+      <div class="name-row" id="nameRow"><input id="nameInput" maxlength="14" placeholder="Your name" autocomplete="nickname"><button class="btn alt" id="saveScore" type="button">Save</button></div>
+      <div id="overList"></div>
+    </div>
+    <div class="row"><button class="btn ghost" id="overHome" type="button">Home</button><button class="btn" id="again">Run again</button></div></div>
+  <div class="sheet hidden" id="pause"><div class="box"><h2>Paused</h2><button class="btn" id="resume" type="button">Resume</button><button class="btn alt" id="pauseSettings" type="button">Settings</button><button class="btn ghost" id="pauseHome" type="button">Home</button></div></div>
+  <div class="sheet hidden" id="settings"><div class="box"><h2>Settings</h2>
+    <label class="set-row"><span>Music</span><input type="range" id="volMusic" min="0" max="100"></label>
+    <label class="set-row"><span>Sound effects</span><input type="range" id="volSfx" min="0" max="100"></label>
+    <label class="set-row"><span>Voices</span><input type="range" id="volVoice" min="0" max="100"></label>
+    <label class="set-row"><span>Battery saver</span><input type="checkbox" id="saver"><small class="set-note">Smoother on older phones</small></label>
+    <button class="btn ghost" id="replayIntro" type="button">Watch the story again</button>
+    <button class="btn" id="closeSettings" type="button">Done</button></div></div>
+  <div class="sheet hidden" id="tasks"><div class="box"><h2>🎯 Daily tasks</h2><div id="taskList"></div><p class="sub">New tasks every day.</p><p class="sub"><b>Achievements</b> · finish one, a bigger one appears</p><div id="achList"></div><button class="btn" id="closeTasks" type="button">Close</button></div></div>
+  <div class="sheet hidden" id="shop"><div class="box"><h2>🛍 Shop</h2><span class="bank" id="shopBank" style="align-self:center;color:#fff">💰 0</span><p class="sub">Bags</p><div class="shop" id="shopBags"></div><p class="sub">Extras</p><div class="shop" id="shopAcc"></div><button class="btn" id="closeShop" type="button">Done</button></div></div>
+  <div class="sheet hidden" id="board"><div class="box"><h2>🏆 Top couriers</h2><div class="tabs"><button class="on" id="tabAll" type="button">All time</button><button id="tabToday" type="button">Today</button></div><div class="lb" id="boardList">Loading…</div><button class="btn" id="closeBoard" type="button">Close</button></div></div>
+</div></div>
+<script type='module' src='https://static.cloudflareinsights.com/beacon.min.js' data-cf-beacon='{"token": "02b7c493374c43c3997c788cce2c66b5"}'></script>
+</body>
+</html>
