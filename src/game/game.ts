@@ -46,15 +46,6 @@ const CUSTOMERS = [
   { img: 'npc_05_gardener', say: ['Hmph. On time.', 'Fine. Take a tip.'] },
 ];
 const CRASH_ART: Record<string, string> = { chimney: 'fox_06_pancake', laundry: 'fox_08_ghost', crate: 'fox_07_dizzy', gap: 'fox_09_pigeons' };
-const GAGS = [
-  { img: 'gag_01_chimney_therapy', cap: 'Meanwhile, at Chimney Therapy...' },
-  { img: 'gag_02_pigeon_union', cap: 'Meanwhile, the Pigeon Union votes...' },
-  { img: 'gag_03_raccoon_mirror', cap: 'Meanwhile, the Crowd rehearses menace...' },
-  { img: 'gag_04_noodle_meeting', cap: 'Meanwhile, inside the box, the noodles hold a meeting...' },
-  { img: 'gag_05_seagull', cap: 'Meanwhile, a seagull tries to order takeout...' },
-];
-const GAG_FREEZE = 2.6; // seconds the cutaway holds the game
-const GAG_GRACE = 1.2;  // invulnerable seconds after it ends
 const DELIVERY_EVERY = 350; // metres between deliveries
 
 export class Game {
@@ -90,12 +81,9 @@ export class Game {
   private floatT = 0;
   private power: HTMLElement | null = null;
   private gagEl: HTMLElement | null = null;
-  private gagImg: HTMLImageElement | null = null;
   private gagCap: HTMLElement | null = null;
   private gagT = 0;
   private graceT = 0;
-  private nextGag = 450;
-  private gagIdx = 0;
   private chaseGap = 14;
   private crashT = 0;
   private crashKind = 'chimney';
@@ -149,15 +137,11 @@ export class Game {
     pw.style.cssText = 'position:absolute;left:14px;top:58px;display:flex;gap:6px;pointer-events:none;font:800 14px system-ui;color:#fff;text-shadow:0 2px 0 rgba(0,0,0,.35)';
     this.ui.score.parentElement?.parentElement?.appendChild(pw);
     this.power = pw;
+    // caption toast for the gag set pieces along the route (never pauses the run)
     const gg = document.createElement('div');
-    gg.style.cssText = 'position:absolute;inset:0;display:none;flex-direction:column;align-items:center;justify-content:center;gap:10px;background:rgba(20,10,5,.78);z-index:5;pointer-events:none;padding:16px';
-    const gi = document.createElement('img');
-    gi.style.cssText = 'width:100%;border-radius:18px;box-shadow:0 8px 30px rgba(0,0,0,.5);border:4px solid #fff7e6';
-    const gc = document.createElement('div');
-    gc.style.cssText = 'color:#fff7e6;font:800 clamp(15px,4.2vw,22px) system-ui;text-align:center;text-shadow:0 2px 0 rgba(0,0,0,.5)';
-    gg.append(gi, gc);
+    gg.style.cssText = 'position:absolute;left:50%;top:calc(64px + env(safe-area-inset-top));transform:translate(-50%,-12px);opacity:0;transition:opacity .3s,transform .3s;background:rgba(42,27,20,.82);color:#fff7e6;font:800 clamp(13px,3.6vw,18px) system-ui;padding:6px 14px;border-radius:12px;pointer-events:none;z-index:4;max-width:86%;text-align:center;font-style:italic';
     this.ui.score.parentElement?.parentElement?.appendChild(gg);
-    this.gagEl = gg; this.gagImg = gi; this.gagCap = gc;
+    this.gagEl = gg; this.gagCap = gg;
 
     // three Hangry Crowd raccoons chasing behind the fox
     for (let i = 0; i < 3; i++) {
@@ -231,7 +215,7 @@ export class Game {
     this.lane = 1; this.x = 0; this.y = 0; this.vy = 0; this.slideT = 0;
     this.lastHit = -99; this.chaseGap = 14; this.crashT = 0;
     this.shield = false; this.dashT = 0; this.floatT = 0; this.showPower();
-    this.gagT = 0; this.graceT = 0; this.nextGag = 450; if (this.gagEl) this.gagEl.style.display = 'none';
+    this.gagT = 0; this.graceT = 0; if (this.gagEl) this.gagEl.style.opacity = '0';
     this.fox.reset();
     this.stars.visible = false; this.sheet.visible = false;
     this.districtIdx = -1; this.foodIdx = 0; this.nextDelivery = DELIVERY_EVERY;
@@ -266,6 +250,7 @@ export class Game {
     bg.copy(this._ca.set(DISTRICTS[m.a].sky)).lerp(this._cb.set(DISTRICTS[m.b].sky), m.t);
     fog.copy(this._ca.set(DISTRICTS[m.a].fog)).lerp(this._cb.set(DISTRICTS[m.b].fog), m.t).lerp(bg, 0.6);
     this.scenery.setHorizon(bg);
+    this.scenery.setMix(m.a, m.b, m.t);
   }
 
   private deliver() {
@@ -373,13 +358,13 @@ export class Game {
   }
 
   private updateRun(dt: number) {
-    if (this.gagT > 0) {
-      this.gagT -= dt;
-      if (this.gagT <= 0 && this.gagEl) { this.gagEl.style.display = 'none'; this.graceT = GAG_GRACE; this.audio.startMusic(); }
-      return;
-    }
     if (this.graceT > 0) this.graceT -= dt;
-    if (this.distance >= this.nextGag) this.startGag();
+    if (this.gagT > 0 && (this.gagT -= dt) <= 0 && this.gagEl) { this.gagEl.style.opacity = '0'; this.gagEl.style.transform = 'translate(-50%,-12px)'; }
+    // a gag set piece coming into view: caption it, the run keeps going
+    for (const c of this.world.chunks) for (const g of c.gags as { z: number; cap: string; shown?: boolean }[]) {
+      const wz = c.group.position.z + g.z;
+      if (!g.shown && wz > -26 && wz < -8) { g.shown = true; this.showGag(g.cap); }
+    }
     const difficulty = Math.min(1, this.distance / 2500);
     this.speed = Math.min(MAX_SPEED, BASE_SPEED + this.distance * 0.006);
     this.audio.setMusicRate(1 + ((this.speed - BASE_SPEED) / (MAX_SPEED - BASE_SPEED)) * 0.12);
@@ -462,17 +447,12 @@ export class Game {
     this.updateHud();
   }
 
-  private startGag() {
-    const gag = GAGS[this.gagIdx++ % GAGS.length];
-    this.nextGag = this.distance + 500 + Math.random() * 400;
-    if (!this.gagEl || !this.gagImg || !this.gagCap) return;
-    this.gagImg.src = A(gag.img);
-    this.gagCap.textContent = gag.cap;
-    this.gagEl.style.display = 'flex';
-    this.gagT = GAG_FREEZE;
-    this.audio.stopMusic();
-    this.sfx('slide_whistle_up', 1.1);
-    this.ui.bubble.classList.remove('on');
+  private showGag(cap: string) {
+    if (!this.gagEl) return;
+    this.gagEl.textContent = cap;
+    this.gagEl.style.opacity = '1'; this.gagEl.style.transform = 'translate(-50%,0)';
+    this.gagT = 3.2;
+    this.sfx('slide_whistle_up', 1.3);
   }
 
   private collect(kind: 'hotbag' | 'chilli' | 'umbrella') {

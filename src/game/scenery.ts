@@ -64,6 +64,8 @@ export class Scenery {
   readonly group = new THREE.Group();
   private sky: THREE.ShaderMaterial;
   private layers: { mat: THREE.MeshBasicMaterial; k: number }[] = [];
+  /** Painted distant panoramas cut from the district illustrations (art/band_0N.webp). */
+  private bands: THREE.MeshBasicMaterial[] = [];
 
   constructor() {
     // gradient dome: warm peach overhead fading to the golden horizon colour
@@ -93,6 +95,27 @@ export class Scenery {
       this.group.add(ring);
       this.layers.push({ mat, k });
     });
+    // one painted far view per district (cut from its illustration), straight ahead, cross-faded by setMix
+    const loader = new THREE.TextureLoader();
+    ([[620, 0.3226], [880, 0.1898], [480, 0.4208]] as const).forEach(([px, aspect], i) => {
+      const tex = loader.load(`${import.meta.env.BASE_URL}art/band_0${i + 1}.webp`);
+      tex.colorSpace = THREE.SRGBColorSpace;
+      const w = (px / 1280) * 230, h = w * aspect;
+      const mat = new THREE.MeshBasicMaterial({ map: tex, transparent: true, fog: false, depthWrite: false, opacity: i === 0 ? 1 : 0 });
+      const plane = new THREE.Mesh(new THREE.PlaneGeometry(w, h), mat);
+      plane.position.set(0, -5 + h / 2, -200);
+      plane.renderOrder = -8.5;
+      this.group.add(plane);
+      this.bands.push(mat);
+    });
+  }
+
+  /** District blend: a/b district indices, t 0..1 (from districtMix). */
+  setMix(a: number, b: number, t: number) {
+    this.bands.forEach((m, i) => { m.opacity = (i === a ? 1 - t : 0) + (i === b ? t : 0); m.visible = m.opacity > 0.01; });
+    const HAZE = [0.6, 0.1, 0.35]; // rooftop silhouettes: full town, almost none over the open harbour
+    const o = HAZE[a] * (1 - t) + HAZE[b] * t;
+    for (const l of this.layers) { l.mat.opacity = o; l.mat.transparent = true; }
   }
 
   /** Follow the scene's horizon colour (districts fade it). */

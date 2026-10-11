@@ -23,6 +23,27 @@ export const KIT: Record<string, KitSpec> = {
   // district versions of the jump-over crate
   barrels: { url: 'models/barrels.glb', fit: 'height', size: 1.35 },
   cart: { url: 'models/cart.glb', fit: 'width', size: 2.1 },
+  // Harbour Lights
+  dock: { url: 'models/dock.glb', fit: 'width', size: 3.4 },
+  crane: { url: 'models/crane.glb', fit: 'height', size: 6 },
+  lighthouse: { url: 'models/lighthouse.glb', fit: 'height', size: 22 },
+  rowboat: { url: 'models/rowboat.glb', fit: 'max', size: 3.4 },
+  // Garden Terraces
+  gardenhouse_a: { url: 'models/gardenhouse_a.glb', fit: 'height', size: 8 },
+  gardenhouse_b: { url: 'models/gardenhouse_b.glb', fit: 'height', size: 6.8 },
+  pergola: { url: 'models/pergola.glb', fit: 'height', size: 3.6 },
+  fountain: { url: 'models/fountain.glb', fit: 'width', size: 2.4 },
+  planter: { url: 'models/planter.glb', fit: 'max', size: 2.2 },
+  trellis: { url: 'models/trellis.glb', fit: 'height', size: 2.8 },
+  balloon: { url: 'models/balloon.glb', fit: 'height', size: 7 },
+  // Noodle Roofs extras
+  noodlehouse_b: { url: 'models/noodlehouse_b.glb', fit: 'height', size: 6.2 },
+  noodlehouse_c: { url: 'models/noodlehouse_c.glb', fit: 'height', size: 6.2 },
+  // gag set pieces
+  pigeons: { url: 'models/pigeons.glb', fit: 'width', size: 3.2 },
+  seagull: { url: 'models/seagull.glb', fit: 'height', size: 3.2 },
+  chimneytherapy: { url: 'models/chimneytherapy.glb', fit: 'width', size: 3.4 },
+  raccoonmirror: { url: 'models/raccoonmirror.glb', fit: 'height', size: 2.6 },
 };
 
 const ready = new Map<string, THREE.Object3D>();
