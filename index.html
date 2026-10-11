@@ -14,7 +14,7 @@
   #frame{position:relative;overflow:hidden;height:100%;aspect-ratio:9/16;max-width:100%;background:#f9c98a}
   canvas{display:block;width:100%;height:100%}
   .hud{position:absolute;left:0;right:0;top:0;padding:calc(10px + env(safe-area-inset-top)) 14px 0;display:flex;justify-content:space-between;color:#fff;font-weight:800;text-shadow:0 2px 0 rgba(0,0,0,.35);pointer-events:none;font-size:clamp(16px,4.4vw,26px)}
-  .bubble{position:absolute;left:50%;top:22%;transform:translateX(-50%) scale(.9);background:#fff;color:#3b2417;padding:8px 14px;border-radius:16px;font-weight:700;font-size:clamp(14px,4vw,22px);opacity:0;transition:opacity .15s,transform .15s;pointer-events:none;white-space:nowrap;box-shadow:0 3px 0 rgba(0,0,0,.25)}
+  .bubble{position:absolute;left:50%;top:22%;transform:translateX(-50%) scale(.9);background:#fff;color:#3b2417;padding:8px 14px;border-radius:16px;font-weight:700;font-size:clamp(14px,4vw,22px);opacity:0;transition:opacity .15s,transform .15s;pointer-events:none;white-space:normal;max-width:86%;width:max-content;text-align:center;box-shadow:0 3px 0 rgba(0,0,0,.25)}
   .bubble.on{opacity:1;transform:translateX(-50%) scale(1)}
   .panel{position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:14px;background:rgba(60,30,15,.55);color:#fff;text-align:center;padding:24px}
   .panel h1{margin:0;font-size:clamp(34px,10vw,64px);text-shadow:0 4px 0 rgba(0,0,0,.35)}
@@ -55,6 +55,34 @@
   .customer img{width:70%;filter:drop-shadow(0 6px 0 rgba(0,0,0,.25))}
   .customer div{background:#fff;color:#3b2417;padding:6px 12px;border-radius:14px;font-weight:800;font-size:clamp(13px,3.6vw,20px);margin-bottom:-8px;z-index:1;box-shadow:0 3px 0 rgba(0,0,0,.25)}
   #over img.crowd{width:80%;filter:drop-shadow(0 6px 0 rgba(0,0,0,.3))}
+  .icon-btn{position:absolute;z-index:6;width:46px;height:46px;border-radius:50%;border:0;background:rgba(255,255,255,.9);color:#5a2a14;font-size:20px;font-weight:900;box-shadow:0 3px 0 rgba(0,0,0,.25);cursor:pointer;display:flex;align-items:center;justify-content:center}
+  .icon-btn:active{transform:translateY(2px);box-shadow:0 1px 0 rgba(0,0,0,.25)}
+  #pauseBtn{top:calc(46px + env(safe-area-inset-top));right:12px}
+  #menuSettings{top:calc(10px + env(safe-area-inset-top));right:14px}
+  #menuBoard{top:calc(10px + env(safe-area-inset-top));left:14px}
+  .sheet{position:absolute;inset:0;z-index:12;display:flex;align-items:center;justify-content:center;background:rgba(40,20,10,.62);padding:20px}
+  .sheet .box{width:min(100%,360px);max-height:100%;overflow:auto;background:#fff6e6;color:#3b2116;border-radius:22px;padding:20px 18px;box-shadow:0 8px 0 rgba(0,0,0,.25);display:flex;flex-direction:column;gap:12px;text-align:center}
+  .sheet h2{margin:0;font-size:28px}
+  .sheet .btn{width:100%}
+  .btn.alt{background:#2e9e91;box-shadow:0 5px 0 #1d6b62}
+  .btn.ghost{background:#e8d6bf;color:#5a2a14;box-shadow:0 5px 0 #c4ab8c}
+  .set-row{display:flex;align-items:center;gap:10px;text-align:left;font-weight:700}
+  .set-row span{flex:0 0 112px}
+  .set-row input[type=range]{flex:1;accent-color:#ff7a1a}
+  .lb ol{margin:0;padding:0;list-style:none;counter-reset:r}
+  .lb li{counter-increment:r;display:flex;gap:8px;align-items:center;padding:7px 10px;border-radius:10px;font-weight:700}
+  .lb li:nth-child(odd){background:#f4e4cc}
+  .lb li::before{content:counter(r);width:22px;color:#b35a1e}
+  .lb li span{flex:1;text-align:left;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .lb li.me{background:#ffcf8a}
+  .lb-head{font-weight:900;margin-bottom:6px}
+  .lb-empty{opacity:.7}
+  .name-row{display:flex;gap:8px}
+  .name-row input{flex:1;min-width:0;border:2px solid #e2c49c;border-radius:12px;padding:10px;font-size:17px;font-weight:700;color:#3b2116;background:#fff}
+  .name-row .btn{width:auto;padding:10px 16px;font-size:17px}
+  #over .row{display:flex;gap:10px;width:min(100%,360px)}
+  #over .row .btn{flex:1;padding:12px 10px;font-size:20px}
+  #over .lb{width:min(100%,360px);background:rgba(255,246,230,.95);color:#3b2116;border-radius:18px;padding:12px}
   .hidden{display:none}
 </style>
 </head>
@@ -67,8 +95,22 @@
   <div class="customer" id="customer"><div id="customerText"></div><img id="customerImg" alt=""></div>
   <img class="card" id="card" alt="">
   <div class="bubble" id="bubble"></div>
-  <div class="panel menu" id="menu"><h1>Takeout Fox</h1><p>Swipe or use arrow keys: left, right, jump, slide</p><button class="btn" id="play">Run!</button><button class="link" id="story" type="button">Story</button></div>
-  <div class="panel hidden" id="over"><img class="crowd" src="./art/crowd_02_dogpile.webp" alt=""><h1 id="overTitle">Dropped!</h1><p id="overText"></p><button class="btn" id="again">Run again</button></div>
+  <button class="icon-btn hidden" id="pauseBtn" type="button" aria-label="Pause">❚❚</button>
+  <div class="panel menu" id="menu"><button class="icon-btn" id="menuBoard" type="button" aria-label="Top scores">🏆</button><button class="icon-btn" id="menuSettings" type="button" aria-label="Settings">⚙︎</button><h1>Takeout Fox</h1><p>Swipe or use arrow keys: left, right, jump, slide</p><button class="btn" id="play">Run!</button><button class="link" id="story" type="button">Story</button></div>
+  <div class="panel hidden" id="over"><h1 id="overTitle">Dropped!</h1><p id="overText"></p>
+    <div class="lb" id="overBoard">
+      <div class="name-row" id="nameRow"><input id="nameInput" maxlength="14" placeholder="Your name" autocomplete="nickname"><button class="btn alt" id="saveScore" type="button">Save</button></div>
+      <div id="overList"></div>
+    </div>
+    <div class="row"><button class="btn ghost" id="overHome" type="button">Home</button><button class="btn" id="again">Run again</button></div></div>
+  <div class="sheet hidden" id="pause"><div class="box"><h2>Paused</h2><button class="btn" id="resume" type="button">Resume</button><button class="btn alt" id="pauseSettings" type="button">Settings</button><button class="btn ghost" id="pauseHome" type="button">Home</button></div></div>
+  <div class="sheet hidden" id="settings"><div class="box"><h2>Settings</h2>
+    <label class="set-row"><span>Music</span><input type="range" id="volMusic" min="0" max="100"></label>
+    <label class="set-row"><span>Sound effects</span><input type="range" id="volSfx" min="0" max="100"></label>
+    <label class="set-row"><span>Voices</span><input type="range" id="volVoice" min="0" max="100"></label>
+    <button class="btn ghost" id="replayIntro" type="button">Watch the story again</button>
+    <button class="btn" id="closeSettings" type="button">Done</button></div></div>
+  <div class="sheet hidden" id="board"><div class="box"><h2>🏆 Top couriers</h2><div class="lb" id="boardList">Loading…</div><button class="btn" id="closeBoard" type="button">Close</button></div></div>
 </div></div>
 <script type="module" src="/src/main.ts"></script>
 </body>

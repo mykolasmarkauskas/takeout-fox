@@ -99,7 +99,7 @@ export class Scenery {
   setHorizon(c: THREE.Color) {
     this.sky.uniforms.bottom.value.copy(c);
     const top = this.sky.uniforms.top.value as THREE.Color;
-    top.copy(c).lerp(new THREE.Color(0xd98a7a), 0.75);
+    top.copy(c).offsetHSL(-0.02, 0.04, -0.1);
     for (const l of this.layers) l.mat.color.set(0x7a4a3c).lerp(c, l.k);
   }
 }

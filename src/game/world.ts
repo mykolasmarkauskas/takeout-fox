@@ -3,7 +3,7 @@ import { RoundedBoxGeometry } from 'three/examples/jsm/geometries/RoundedBoxGeom
 import { kitClone, kitHas, kitKeys, kitSize } from './kit';
 import { PUFF } from './scenery';
 import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
-import { CHUNK_COUNT, CHUNK_LEN, COLORS, LANES, ObstacleKind, RECYCLE_Z } from './constants';
+import { BASE_SPEED, CHUNK_COUNT, CHUNK_LEN, COLORS, GRAVITY, JUMP_V, LANES, MAX_SPEED, ObstacleKind, RECYCLE_Z } from './constants';
 
 // Standard (not physical) for the city: it covers most pixels, so keep the shader cheap on phones.
 const std = (c: number, rough = 0.7, extra: Partial<THREE.MeshPhysicalMaterialParameters> = {}) =>
@@ -40,21 +40,50 @@ const M = {
   paverB: std(0x9a8075, 0.85),
   paverC: std(0xae9488, 0.85),
   curb: std(0xc7ab97, 0.8),
-  grout: std(0x6e5248, 0.9),
+  grout: std(0x5e463d, 0.95),
   under: new THREE.MeshBasicMaterial({ color: 0x5a3a30 }),
+  water: std(0x3d8aa8, 0.22, { clearcoat: 0.6, clearcoatRoughness: 0.2 }),
+  hull: std(0x8a4b2e, 0.6),
+  hullTrim: std(0xf3e6cf, 0.6),
+  sail: std(0xfff3df, 0.8),
+  bollard: std(0x4a4f57, 0.5),
+  leaf: std(0x6fa04e, 0.75),
+  leafDark: std(0x4f8040, 0.75),
+  trunk: std(0x6b4a33, 0.8),
+  terrace: std(0xb59a7a, 0.85),
+  flowerPink: std(0xf090b0, 0.6),
+  flowerWhite: std(0xfff4ef, 0.6),
+  vine: std(0x4f8a3e, 0.7),
+  lanternWarm: new THREE.MeshStandardMaterial({ color: 0xfff0c8, emissive: 0xffd890, emissiveIntensity: 0.9, roughness: 0.4 }),
+  lanternTeal: new THREE.MeshStandardMaterial({ color: 0x48c6bd, emissive: 0x20a8a0, emissiveIntensity: 0.9, roughness: 0.4 }),
+  roofTealA: std(0x3f6c72, 0.55),
+  roofTealB: std(0x335a60, 0.55),
+  roofMossA: std(0x6d7c40, 0.7),
+  roofMossB: std(0x5a6a36, 0.7),
   roofTileA: std(0x6f4a3c, 0.6),
   roofTileB: std(0x5e3d32, 0.6),
   pole: std(0x5a3a28, 0.7),
   lanternRed: new THREE.MeshStandardMaterial({ color: 0xd8301f, emissive: 0xff2a10, emissiveIntensity: 1.0, roughness: 0.4 }),
   lanternGold: new THREE.MeshStandardMaterial({ color: 0xff9a1a, emissive: 0xff8a10, emissiveIntensity: 0.95, roughness: 0.4 }),
 };
+/** District looks. Index matches Game's DISTRICTS (one district every DISTRICT_LEN metres). */
+export const DISTRICT_LEN = 700;
+export const districtAt = (dist: number) => Math.floor(Math.max(0, dist) / DISTRICT_LEN) % 3;
+const BLEND = 45; // metres either side of a boundary where the two looks mix
+interface Theme { roof: [THREE.Material, THREE.Material]; kits: string[]; lanterns: THREE.Material[]; far: 'town' | 'sea' | 'garden'; chimneys: number; curb: 'none' | 'bollard' | 'pot' }
+const THEMES: Theme[] = [
+  { roof: [M.roofTileA, M.roofTileB], kits: ['bld_noodle', 'bld_tower', 'bld_teal'], lanterns: [M.lanternRed, M.lanternGold, M.lanternRed], far: 'town', chimneys: 2, curb: 'none' },
+  { roof: [M.roofTealA, M.roofTealB], kits: ['bld_teal', 'bld_teal', 'bld_tower'], lanterns: [M.lanternWarm, M.lanternTeal, M.lanternWarm], far: 'sea', chimneys: 1, curb: 'bollard' },
+  { roof: [M.roofMossA, M.roofMossB], kits: ['bld_noodle', 'bld_tower', 'bld_teal'], lanterns: [M.flowerPink, M.flowerWhite, M.flowerPink], far: 'garden', chimneys: 1, curb: 'pot' },
+];
+
 const rbox = (w: number, h: number, d: number, r: number, m: THREE.Material) => {
   const mesh = new THREE.Mesh(new RoundedBoxGeometry(w, h, d, 3, Math.min(r, w / 2 - 0.001, h / 2 - 0.001, d / 2 - 0.001)), m);
   mesh.castShadow = true;
   return mesh;
 };
 const geo = {
-  coin: new THREE.CylinderGeometry(0.34, 0.34, 0.1, 24),
+  coin: new THREE.CylinderGeometry(0.36, 0.36, 0.12, 32),
   coinRim: new THREE.TorusGeometry(0.31, 0.04, 8, 24),
   lantern: new THREE.SphereGeometry(0.3, 16, 12),
   cap: new THREE.CylinderGeometry(0.12, 0.12, 0.06, 10),
@@ -81,6 +110,78 @@ const pickMat = (k: PickupKind) => {
   return new THREE.SpriteMaterial({ map: pickTex[k], transparent: true, fog: false });
 };
 export interface Coin { lane: number; z: number; mesh: THREE.Mesh; taken: boolean }
+
+/** Coin face: warm gold with an embossed noodle-bowl emblem, notched rim (drawn once on a canvas). */
+function coinFace() {
+  const S = 256, c = document.createElement('canvas');
+  c.width = c.height = S;
+  const g = c.getContext('2d')!;
+  const R = S / 2;
+  let gr = g.createRadialGradient(R * 0.8, R * 0.7, 10, R, R, R);
+  gr.addColorStop(0, '#fff2a8'); gr.addColorStop(0.55, '#ffc93a'); gr.addColorStop(1, '#e09412');
+  g.fillStyle = gr; g.beginPath(); g.arc(R, R, R, 0, Math.PI * 2); g.fill();
+  // notched rim
+  g.strokeStyle = '#b86a08'; g.lineWidth = 14; g.beginPath(); g.arc(R, R, R - 9, 0, Math.PI * 2); g.stroke();
+  g.strokeStyle = '#ffe48a'; g.lineWidth = 3;
+  for (let i = 0; i < 48; i++) { const a = (i / 48) * Math.PI * 2; g.beginPath(); g.moveTo(R + Math.cos(a) * (R - 15), R + Math.sin(a) * (R - 15)); g.lineTo(R + Math.cos(a) * (R - 3), R + Math.sin(a) * (R - 3)); g.stroke(); }
+  g.strokeStyle = '#c97a0c'; g.lineWidth = 4; g.beginPath(); g.arc(R, R, R - 24, 0, Math.PI * 2); g.stroke();
+  // emblem: noodle bowl with chopsticks and steam
+  const ink = '#a85a06', hi = '#ffe9a0';
+  g.lineCap = 'round'; g.lineJoin = 'round';
+  g.fillStyle = ink;
+  g.beginPath(); g.moveTo(R - 62, R + 4); g.lineTo(R + 62, R + 4); g.quadraticCurveTo(R + 58, R + 66, R, R + 70); g.quadraticCurveTo(R - 58, R + 66, R - 62, R + 4); g.fill();
+  g.fillRect(R - 24, R + 66, 48, 10);
+  g.strokeStyle = hi; g.lineWidth = 5; g.beginPath(); g.moveTo(R - 44, R + 20); g.quadraticCurveTo(R - 36, R + 46, R - 12, R + 56); g.stroke();
+  g.strokeStyle = ink; g.lineWidth = 8;
+  g.beginPath(); g.moveTo(R + 8, R - 2); g.lineTo(R + 58, R - 62); g.stroke();
+  g.beginPath(); g.moveTo(R + 22, R - 2); g.lineTo(R + 72, R - 54); g.stroke();
+  g.lineWidth = 6;
+  for (const dx of [-36, -12, 12]) { g.beginPath(); g.moveTo(R + dx, R - 8); g.bezierCurveTo(R + dx - 12, R - 24, R + dx + 12, R - 34, R + dx, R - 52); g.stroke(); }
+  const t = new THREE.CanvasTexture(c);
+  t.colorSpace = THREE.SRGBColorSpace;
+  t.anisotropy = 4;
+  return t;
+}
+const COIN_TEX = coinFace();
+
+/** Hand-painted pun signs along the route, per district. */
+const SIGNS: string[][] = [
+  ['WOK THIS WAY →', 'PHO-NOMENAL NOODLES', 'NO RUNNING ON ROOFS (lol)', 'RACCOONS: PLEASE KNOCK', 'LOST: 1 CHOPSTICK', 'DUMPLING SUPPORT GROUP — TUE', 'HONK IF HANGRY', 'SOUP OF THE DAY: YES', 'TIPS MAKE FOXES FAST', 'CAUTION: SPICY ZONE'],
+  ['FISH & TIPS', 'THE KRAKEN IS ON BREAK', 'SEAGULLS ARE NOT WAITERS', 'BOATS: NO DELIVERY', 'SHRIMPLY THE BEST', 'ANCHOVY? AN-CHO-VERY!', 'DO NOT FEED THE CAPTAIN'],
+  ['PLEASE DON\'T EAT THE BONSAI', 'THIS HEDGE IS ON A DIET', 'SNAIL LANE (SLOW)', 'LETTUCE PASS', 'BEE-HAVE YOURSELF', 'GRASS IS GREENER → HERE', 'WEED IT AND REAP'],
+];
+const signTex = new Map<string, THREE.Texture>();
+function signTexture(text: string) {
+  let t = signTex.get(text);
+  if (t) return t;
+  const W = 512, H = 200, c = document.createElement('canvas');
+  c.width = W; c.height = H;
+  const g = c.getContext('2d')!;
+  g.fillStyle = '#7a4a2a'; g.fillRect(0, 0, W, H);
+  g.fillStyle = '#f4dfb8'; g.fillRect(12, 12, W - 24, H - 24);
+  g.strokeStyle = 'rgba(122,74,42,.25)'; g.lineWidth = 2;
+  for (let y = 40; y < H - 12; y += 34) { g.beginPath(); g.moveTo(14, y); g.lineTo(W - 14, y); g.stroke(); } // planks
+  g.fillStyle = '#7b2a18';
+  g.textAlign = 'center'; g.textBaseline = 'middle';
+  const words = text.split(' ');
+  let size = 64, lines: string[] = [];
+  do { // fit in at most 2 lines
+    g.font = `900 ${size}px system-ui, sans-serif`;
+    lines = []; let cur = '';
+    for (const w of words) { const n = cur ? cur + ' ' + w : w; if (g.measureText(n).width > W - 60 && cur) { lines.push(cur); cur = w; } else cur = n; }
+    lines.push(cur); size -= 4;
+  } while ((lines.length > 2 || lines.some((l) => g.measureText(l).width > W - 60)) && size > 22);
+  lines.forEach((l, i) => g.fillText(l, W / 2, H / 2 + (i - (lines.length - 1) / 2) * (size + 8)));
+  t = new THREE.CanvasTexture(c);
+  t.colorSpace = THREE.SRGBColorSpace; t.anisotropy = 4;
+  signTex.set(text, t);
+  return t;
+}
+const signFace = new Map<string, THREE.Material>();
+const signWood = new THREE.MeshStandardMaterial({ color: 0x7a4a2a, roughness: 0.8 });
+const signGeo = new THREE.BoxGeometry(2.4, 0.94, 0.08);
+const coinFaceMat = new THREE.MeshPhysicalMaterial({ map: COIN_TEX, bumpMap: COIN_TEX, bumpScale: 2.5, emissive: 0x6a3d00, emissiveIntensity: 0.25, roughness: 0.32, metalness: 0.6, clearcoat: 0.8, clearcoatRoughness: 0.15 });
+const coinEdgeMat = new THREE.MeshPhysicalMaterial({ color: 0xe9a21c, emissive: 0x6a3d00, emissiveIntensity: 0.25, roughness: 0.3, metalness: 0.65, clearcoat: 0.8 });
 
 const _m = new THREE.Matrix4(), _q = new THREE.Quaternion(), _e = new THREE.Euler(), _v = new THREE.Vector3(), _s = new THREE.Vector3(1, 1, 1);
 
@@ -113,7 +214,7 @@ export class Chunk {
       }
     }
     // grout bed under the pavers, and a dark "town below" floor so the sky never shows through
-    add(new THREE.BoxGeometry(8.2, 0.3, CHUNK_LEN), M.grout, 0, -0.32, -CHUNK_LEN / 2);
+    add(new THREE.BoxGeometry(8.2, 0.3, CHUNK_LEN), M.grout, 0, -0.22, -CHUNK_LEN / 2);
     add(new THREE.PlaneGeometry(60, CHUNK_LEN), M.under, 0, -4.2, -CHUNK_LEN / 2, -Math.PI / 2);
     // stone curbs in blocks on both edges
     for (const sd of [-1, 1]) {
@@ -127,6 +228,8 @@ export class Chunk {
     for (const [m, list] of stat) {
       const mesh = new THREE.Mesh(mergeGeometries(list, false)!, m);
       mesh.receiveShadow = true; mesh.castShadow = m === M.curb;
+      if (m === M.roofTileA) this.roofA = mesh;
+      if (m === M.roofTileB) this.roofB = mesh;
       this.group.add(mesh);
       list.forEach((g) => g.dispose());
     }
@@ -200,9 +303,22 @@ export class Chunk {
   }
 
   smoke: THREE.Sprite[] = [];
+  private roofA!: THREE.Mesh;
+  private roofB!: THREE.Mesh;
+  /** Distance (m) at which the player crosses this chunk's local z = 0. */
+  startDist = 0;
+  /** Which district look to use at local z, blending randomly near a boundary. */
+  private themeAt(z: number, rnd: () => number) {
+    const dist = this.startDist - z;
+    const i = districtAt(dist);
+    const into = Math.max(0, dist) % DISTRICT_LEN; // metres into the current district
+    if (dist > DISTRICT_LEN && into < BLEND && rnd() > 0.5 + into / (2 * BLEND)) return THEMES[districtAt(dist - BLEND)];
+    if (DISTRICT_LEN - into < BLEND && rnd() > 0.5 + (DISTRICT_LEN - into) / (2 * BLEND)) return THEMES[districtAt(dist + BLEND)];
+    return THEMES[i];
+  }
 
-  private garland(z: number, rnd: () => number) {
-    const hl = 5.6 + rnd() * 0.8, hr = 5.6 + rnd() * 0.8, sag = 1.1 + rnd() * 0.5;
+  private garland(z: number, rnd: () => number, th: Theme) {
+    const hl = 8.4 + rnd() * 0.6, hr = 8.4 + rnd() * 0.6, sag = 0.7 + rnd() * 0.3; // lowest lantern ~6.5: well above a jump
     for (const [sd, h] of [[-1, hl], [1, hr]] as const) {
       this.put(new THREE.CylinderGeometry(0.09, 0.12, h + 0.6, 8), M.pole, 4.1 * sd, h / 2 + 0.1, z);
       this.put(new THREE.SphereGeometry(0.14, 8, 6), M.pole, 4.1 * sd, h + 0.45, z);
@@ -213,11 +329,33 @@ export class Chunk {
     const nl = 7;
     for (let i = 1; i <= nl; i++) {
       const p = pt(i / (nl + 1));
-      const m = i % 3 === 1 ? M.lanternGold : M.lanternRed;
+      const m = th.lanterns[i % 3];
+      if (th.far === 'garden') { // flower garland: blossoms and leaves instead of lanterns
+        this.put(geo.sphere, m, p.x, p.y - 0.15, p.z, 0, 0, 0, 0.55, 0.45, 0.55, false);
+        this.put(geo.sphere, M.vine, p.x + 0.35, p.y - 0.1, p.z, 0, 0, 0, 0.4, 0.25, 0.3, false);
+        continue;
+      }
       this.put(geo.lantern, m, p.x, p.y - 0.5, p.z, 0, 0, 0, 1.15, 1.35, 1.15, false);
       this.put(geo.cap, M.lanternCap, p.x, p.y - 0.12, p.z, 0, 0, 0, 0.9, 1, 0.9, false);
       this.put(geo.cap, M.lanternCap, p.x, p.y - 0.92, p.z, 0, 0, 0, 1.1, 1, 1.1, false);
     }
+  }
+
+  private boat(x: number, z: number, rnd: () => number) {
+    const L = 3.5 + rnd() * 2;
+    this.box(1.5, 0.8, L, 0.35, M.hull, x, -2.2, z);
+    this.box(1.6, 0.18, L + 0.1, 0.08, M.hullTrim, x, -1.78, z);
+    this.put(new THREE.CylinderGeometry(0.06, 0.08, 4, 6), M.trunk, x, 0.2, z);
+    const sail = new THREE.BufferGeometry().setFromPoints([new THREE.Vector3(0, 0, 0), new THREE.Vector3(0, 3.2, 0), new THREE.Vector3(0, 0.2, -L * 0.45)]);
+    sail.computeVertexNormals();
+    this.put(sail, M.sail, x + 0.05, -1.4, z, 0, 0, 0);
+    this.put(sail.clone(), M.sail, x - 0.05, -1.4, z, 0, Math.PI, 0, 1, 1, -1);
+  }
+  private tree(x: number, y: number, z: number, k: number, rnd: () => number) {
+    this.put(new THREE.CylinderGeometry(0.14 * k, 0.2 * k, 1.6 * k, 6), M.trunk, x, y + 0.8 * k, z);
+    this.put(geo.sphere.clone(), rnd() > 0.5 ? M.leaf : M.leafDark, x, y + 2 * k, z, 0, 0, 0, 2.2 * k, 1.8 * k, 2.2 * k);
+    this.put(geo.sphere.clone(), M.leaf, x + 0.5 * k, y + 2.6 * k, z + 0.3 * k, 0, 0, 0, 1.4 * k, 1.2 * k, 1.4 * k);
+    if (rnd() > 0.5) this.put(geo.sphere.clone(), M.flowerPink, x - 0.6 * k, y + 2.3 * k, z, 0, 0, 0, 0.35 * k, 0.35 * k, 0.35 * k);
   }
 
   /** Drift chimney smoke upward (call every frame with the world clock). */
@@ -234,6 +372,7 @@ export class Chunk {
 
   /** Rebuild decorative and gameplay content for a chunk starting at difficulty d (0..1). */
   fill(d: number, safe: boolean, rnd: () => number) {
+    this.speed = Math.min(MAX_SPEED, BASE_SPEED + d * 2500 * 0.006); // matches Game's speed ramp
     for (const c of [...this.dyn.children]) {
       this.dyn.remove(c);
       c.traverse((o) => { if (o instanceof THREE.Mesh && o.userData.own) o.geometry.dispose(); });
@@ -243,11 +382,31 @@ export class Chunk {
     this.pickups = [];
 
     this.smoke = [];
+    const mid = this.themeAt(-CHUNK_LEN / 2, () => 0.5);
+    this.roofA.material = mid.roof[0];
+    this.roofB.material = mid.roof[1];
+    const have = new Set(kitKeys('bld_'));
     for (const s of [-1, 1]) {
       // near row: Tripo houses below the roofline, varied size/turn, with the odd gap
       let z = -1 - rnd() * 2;
-      const kits = kitKeys('bld_');
       while (z > -CHUNK_LEN + 2) {
+        const th = this.themeAt(z, rnd);
+        if (th.far === 'sea' && s < 0) { // harbour: open water right below the roofs, boats moored close
+          const len = 6;
+          this.flat(40, 0.2, len + 0.05, M.water, s * 26, -2.3, z - len / 2);
+          this.flat(0.8, 1.6, len + 0.05, M.terrace, s * 6.4, -2.4, z - len / 2); // quay wall
+          if (rnd() < 0.5) this.boat(s * (9 + rnd() * 6), z - len / 2, rnd);
+          z -= len;
+          continue;
+        }
+        if (th.far === 'garden' && rnd() < 0.55) { // garden: trees and hedges between the houses
+          const len = 3 + rnd() * 3;
+          this.box(3.2, 1.2, len, 0.5, M.leafDark, s * 7.8, -1.6, z - len / 2);
+          this.tree(s * (7.4 + rnd() * 2), -1.2, z - len / 2, 1.1 + rnd() * 0.6, rnd);
+          z -= len;
+          continue;
+        }
+        const kits = th.kits.filter((k) => have.has(k));
         if (!kits.length) break;
         if (rnd() < 0.12) { z -= 2 + rnd() * 2; continue; }
         const key = kits[Math.floor(rnd() * kits.length)];
@@ -260,15 +419,31 @@ export class Chunk {
         this.dyn.add(b);
         z -= along * 0.85 + rnd() * 0.6;
       }
-      // far row: cheap merged houses that read as the rest of the town through the haze
+      // far row: town houses / open harbour with boats (left side) / garden terraces with trees
       z = -rnd() * 3;
       while (z > -CHUNK_LEN + 3) {
-        const w = 4 + rnd() * 3, h = 4 + rnd() * 6, len = 4 + rnd() * 4;
-        this.building(s, z, w, h, len, rnd, 13 + rnd() * 4, -2.5 + rnd() * 2);
-        z -= len + rnd() * 1.5;
+        const th = this.themeAt(z, rnd);
+        const far = th.far === 'sea' && s > 0 ? 'town' : th.far; // harbour: sea on the left, town on the right
+        if (far === 'sea') {
+          const len = 8;
+          if (rnd() < 0.4) this.boat(s * (18 + rnd() * 10), z - len / 2, rnd);
+          z -= len;
+        } else if (far === 'garden') {
+          const len = 4 + rnd() * 3;
+          const tx = s * (13 + rnd() * 5), ty = -2 + rnd() * 2;
+          this.box(5, 1.6, len, 0.3, M.terrace, tx, ty - 0.8, z - len / 2); // terrace step
+          this.box(5.2, 0.3, len + 0.2, 0.12, M.leafDark, tx, ty + 0.05, z - len / 2);
+          const n = 1 + Math.floor(rnd() * 3);
+          for (let i = 0; i < n; i++) this.tree(tx + (rnd() - 0.5) * 3, ty + 0.1, z - rnd() * len, 0.8 + rnd() * 0.7, rnd);
+          z -= len + rnd() * 0.5;
+        } else {
+          const w = 4 + rnd() * 3, h = 4 + rnd() * 6, len = 4 + rnd() * 4;
+          this.building(s, z, w, h, len, rnd, 13 + rnd() * 4, -2.5 + rnd() * 2);
+          z -= len + rnd() * 1.5;
+        }
       }
       // chimneys poking out of the near roofs, each with a smoke column
-      const nc = 1 + Math.floor(rnd() * 2);
+      const nc = Math.floor(rnd() * (mid.chimneys + 1));
       for (let i = 0; i < nc; i++) {
         const t = 0.25 + rnd() * 0.5, cz = -4 - rnd() * (CHUNK_LEN - 8);
         const cx = s * (4.75 + t * 2.6), cy = -0.35 - t * 1.9;
@@ -282,10 +457,37 @@ export class Chunk {
           this.smoke.push(sp);
         }
       }
+      // curb dressing: harbour bollards with rope, garden flower pots
+      for (let z2 = -3 - rnd() * 4; z2 > -CHUNK_LEN + 2; z2 -= 6 + rnd() * 6) {
+        const th = this.themeAt(z2, rnd);
+        if (th.curb === 'bollard') {
+          this.put(geo.cyl.clone(), M.bollard, s * 4.1, 0.75, z2, 0, 0, 0, 0.42, 0.7, 0.42);
+          this.put(geo.sphere.clone(), M.bollard, s * 4.1, 1.1, z2, 0, 0, 0, 0.5, 0.3, 0.5);
+          this.put(new THREE.TorusGeometry(0.26, 0.06, 6, 14), M.rope, s * 4.1, 0.62, z2, Math.PI / 2, 0, 0);
+        } else if (th.curb === 'pot') {
+          this.put(geo.cyl.clone(), M.pot, s * 4.1, 0.6, z2, 0, 0, 0, 0.55, 0.45, 0.55);
+          this.put(geo.sphere.clone(), M.leaf, s * 4.1, 1.0, z2, 0, 0, 0, 0.75, 0.6, 0.75);
+          for (let f = 0; f < 3; f++) this.put(geo.sphere.clone(), f % 2 ? M.flowerWhite : M.flowerPink, s * 4.1 + (rnd() - 0.5) * 0.4, 1.2 + rnd() * 0.15, z2 + (rnd() - 0.5) * 0.4, 0, 0, 0, 0.16, 0.16, 0.16);
+        }
+      }
     }
-    // lantern garlands strung across the street between two posts
-    const ng = 1 + Math.floor(rnd() * 2);
-    for (let i = 0; i < ng; i++) this.garland(-6 - i * 18 - rnd() * 10, rnd);
+    // a funny sign on a post at the curb, now and then
+    if (rnd() < 0.45) {
+      const sd = rnd() < 0.5 ? -1 : 1, sz = -6 - rnd() * (CHUNK_LEN - 12);
+      const th = THEMES.indexOf(this.themeAt(sz, rnd));
+      const list = SIGNS[th] ?? SIGNS[0];
+      const text = list[Math.floor(rnd() * list.length)];
+      let face = signFace.get(text);
+      if (!face) signFace.set(text, (face = new THREE.MeshStandardMaterial({ map: signTexture(text), roughness: 0.75 })));
+      const board = new THREE.Mesh(signGeo, [signWood, signWood, signWood, signWood, face, signWood]);
+      board.position.set(sd * 4.25, 2.6, sz);
+      board.rotation.y = -sd * 0.45;
+      board.castShadow = true;
+      this.dyn.add(board);
+      this.put(new THREE.CylinderGeometry(0.07, 0.09, 2.3, 6), M.pole, sd * 4.25, 1.15, sz);
+    }
+    // a garland strung across the street between two posts, roughly one every ~100 m
+    if (rnd() < 0.4) { const gz = -8 - rnd() * 24; this.garland(gz, rnd, this.themeAt(gz, rnd)); }
     this.flush();
 
     if (safe) {
@@ -336,16 +538,20 @@ export class Chunk {
   private addCoinLine(lane: number, z0: number, n: number, step: number) {
     for (let i = 0; i < n; i++) this.addCoin(lane, z0 - i * step * 1.4, 1.0);
   }
+  private speed = BASE_SPEED;
+  /** Coins along the actual jump path, apex over z: up with g*0.85, down with g*1.35 (see Game). */
   private addCoinArc(lane: number, z: number) {
-    for (let i = -3; i <= 3; i++) this.addCoin(lane, z + i * 1.1, 1.0 + (3 - Math.abs(i)) * 0.55);
+    const gUp = GRAVITY * 0.85, gDn = GRAVITY * 1.35, H = (JUMP_V * JUMP_V) / (2 * gUp);
+    const tUp = JUMP_V / gUp, tDn = Math.sqrt((2 * H) / gDn);
+    for (let i = -3; i <= 3; i++) {
+      const t = i < 0 ? (i / 3) * tUp * 0.92 : (i / 3) * tDn * 0.92;
+      const h = H - 0.5 * (t < 0 ? gUp : gDn) * t * t;
+      this.addCoin(lane, z - this.speed * t, 1.0 + h);
+    }
   }
   private addCoin(lane: number, z: number, y: number) {
-    const m = new THREE.Mesh(geo.coin, M.coin);
+    const m = new THREE.Mesh(geo.coin, [coinEdgeMat, coinFaceMat, coinFaceMat]);
     m.castShadow = true;
-    const rim = new THREE.Mesh(geo.coinRim, M.coin);
-    m.add(rim);
-    rim.position.y = 0;
-    rim.rotation.x = Math.PI / 2;
     m.rotation.x = Math.PI / 2;
     m.position.set(LANES[lane], y, z);
     this.dyn.add(m);
@@ -356,7 +562,15 @@ export class Chunk {
     const g = new THREE.Group();
     const add = (mesh: THREE.Mesh, x: number, y: number, zz: number) => { mesh.position.set(x, y, zz); mesh.userData.own = true; mesh.receiveShadow = true; g.add(mesh); return mesh; };
     let depth = 1;
-    if ((kind === 'chimney' || kind === 'crate' || kind === 'laundry') && kitHas(kind)) {
+    if (kind === 'laundry' && kitHas(kind)) {
+      // raised so the washing hangs at head height: run into it, or slide underneath
+      const l = kitClone(kind)!;
+      l.scale.multiplyScalar(1.3);
+      l.position.y = 0.45;
+      g.add(l);
+      for (const sx of [-1, 1]) add(new THREE.Mesh(new THREE.CylinderGeometry(0.11, 0.13, 0.6, 8), M.pole), sx * 1.45, 0.3, 0).castShadow = true;
+      depth = 0.3;
+    } else if ((kind === 'chimney' || kind === 'crate') && kitHas(kind)) {
       g.add(kitClone(kind)!);
       depth = kind === 'chimney' ? 1.5 : kind === 'crate' ? 1.4 : 0.3;
     } else if (kind === 'chimney') {
@@ -425,6 +639,7 @@ export class World {
     this.spawned = 0;
     this.chunks.forEach((c, i) => {
       c.group.position.z = 20 - i * CHUNK_LEN;
+      c.startDist = i * CHUNK_LEN - 20;
       c.fill(0, i < 2, this.rnd);
       this.spawned++;
     });
@@ -444,6 +659,8 @@ export class World {
     for (const c of this.chunks) minZ = Math.min(minZ, c.group.position.z);
     for (const c of this.chunks) {
       if (c.group.position.z > RECYCLE_Z) {
+        const lead = this.chunks.reduce((a, b) => (a.group.position.z < b.group.position.z ? a : b));
+        c.startDist = lead.startDist + CHUNK_LEN;
         c.group.position.z = minZ - CHUNK_LEN;
         minZ = c.group.position.z;
         c.fill(difficulty, false, this.rnd);

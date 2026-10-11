@@ -6,6 +6,18 @@ import { animateRun, createFox, Fox } from './fox';
 /** Extra yaw applied to the loaded model so it faces -Z. */
 const MODEL_YAW = Math.PI;
 
+const _q = new THREE.Quaternion(), _eul = new THREE.Euler();
+/** Slide pose: drop, lean and per-bone offsets (local radians) applied over the run clip. */
+export const SLIDE = {
+  drop: 0.3, lean: -0.38,
+  bones: [
+    ['Spine', -0.35, 0, 0], ['Spine1', -0.2, 0, 0],
+    ['LeftUpLeg', -1.5, 0, 0.1], ['LeftLeg', 0.15, 0, 0],
+    ['RightUpLeg', -0.7, 0, -0.15], ['RightLeg', 1.9, 0, 0],
+    ['LeftArm', 0, 0, 0.6], ['RightArm', 0, 0, -0.6],
+  ] as [string, number, number, number][],
+};
+
 export type Move = 'idle' | 'run' | 'jump' | 'slide' | 'fall';
 
 /**
@@ -74,6 +86,8 @@ export class FoxActor {
         }
         if (!this.clips.has('idle') && this.clips.has('run')) this.clips.set('idle', this.clips.get('run')!);
       }
+      this.bones = new Map();
+      m.traverse((o) => { if ((o as THREE.Bone).isBone) this.bones!.set(o.name.replace(/^mixamorig:?/, ''), o); });
       if (this.placeholder) { this.body.remove(this.placeholder.group); this.placeholder = null; }
       this.model = pose;
       this.body.add(pose);
@@ -126,10 +140,24 @@ export class FoxActor {
     const m = this.model!;
     const w = time * (9 + speedFactor * 6);
     const hasClips = this.clips.size > 0;
-    m.position.y = (hasClips ? 0 : (airborne || sliding ? 0 : Math.abs(Math.sin(w)) * 0.12));
-    m.rotation.x = sliding ? -1.1 : airborne ? 0.12 : hasClips ? 0.05 : 0.12;
+    // baseball slide: ease into a low, leaning-back pose with one leg out front (bones posed on top of the clip)
+    this.slideK += ((sliding ? 1 : 0) - this.slideK) * Math.min(1, dt * 14);
+    const k = this.slideK;
+    m.position.y = (hasClips ? 0 : (airborne || sliding ? 0 : Math.abs(Math.sin(w)) * 0.12)) - k * SLIDE.drop;
+    m.rotation.x = (airborne ? 0.12 : hasClips ? 0.05 : 0.12) * (1 - k) + k * SLIDE.lean;
+    if (k > 0.01 && this.bones) {
+      for (const [name, rx, ry, rz] of SLIDE.bones) {
+        const b = this.bones.get(name);
+        if (!b) continue;
+        _q.setFromEuler(_eul.set(rx, ry, rz));
+        b.quaternion.slerp(_q.premultiply(b.quaternion.clone()), k);
+      }
+    }
     m.rotation.z = hasClips ? 0 : Math.sin(w * 0.5) * 0.03;
   }
+
+  private slideK = 0;
+  private bones: Map<string, THREE.Object3D> | null = null;
 
   /** Reset transforms after a crash. */
   reset() {
