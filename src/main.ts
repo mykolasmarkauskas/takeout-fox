@@ -1,7 +1,7 @@
 import { introSeen, playIntro } from './game/intro';
 import { Game } from './game/game';
 import { renderBoard, savedName, submitScore, topScores, type Entry } from './game/leaderboard';
-import { ACHIEVEMENTS, Progress, SHOP } from './game/progress';
+import { Progress, SHOP } from './game/progress';
 import { track } from './game/stats';
 
 const $ = (id: string) => document.getElementById(id)!;
@@ -102,7 +102,12 @@ const applyLook = () => {
 };
 const renderTasks = () => {
   $('taskList').innerHTML = progress.tasks().map((t) => `<div class="task${t.done ? ' done' : ''}"><b>${t.done ? '✅ ' : ''}${esc(t.text)}</b><div class="bar"><i style="width:${Math.round((t.best / t.goal) * 100)}%"></i></div><div class="meta"><span>${t.done ? 'Done!' : `${Math.floor(t.best)} / ${t.goal}`}</span><span>+${t.reward} 💰</span></div></div>`).join('');
-  $('achList').innerHTML = ACHIEVEMENTS.map((a) => `<div class="ach${progress.hasAch(a.id) ? '' : ' locked'}"><span class="ic">${progress.hasAch(a.id) ? '🏅' : '🔒'}</span><div><b>${esc(a.name)}</b><small>${esc(a.text)} · +${a.reward} 💰</small></div></div>`).join('');
+  $('achList').innerHTML = progress.ladders().map((a) => {
+    const stars = Array.from({ length: a.max }, (_, i) => `<i class="${i < a.tier ? 'on' : ''}"></i>`).join('');
+    return a.maxed
+      ? `<div class="ach done"><span class="ic">${a.icon}</span><div class="ach-body"><b>${esc(a.name)}</b><span class="stars">${stars}</span><small>All tiers done!</small></div></div>`
+      : `<div class="ach"><span class="ic">${a.icon}</span><div class="ach-body"><div class="ach-top"><b>${esc(a.name)}</b><span class="stars">${stars}</span></div><small>${esc(a.text)} · +${a.reward} 💰</small><div class="bar"><i style="width:${Math.round((a.best / a.goal) * 100)}%"></i></div></div></div>`;
+  }).join('');
   try { localStorage.setItem('tf_tasks_seen', progress.tasks().map((t) => t.id + t.done).join()); } catch { /* private mode */ }
   refreshBank();
 };
@@ -143,10 +148,10 @@ const nextToast = () => {
   const el = $('toast'); el.textContent = t; el.classList.add('on');
   setTimeout(() => { el.classList.remove('on'); setTimeout(nextToast, 350); }, 2200);
 };
-const checkProgress = () => {
-  const r = progress.check(game.run);
+const checkProgress = (ended = false) => {
+  const r = progress.check(game.run, ended);
   for (const t of r.tasks) { toast(`✅ ${t.text}  +${t.reward} 💰`); game.audio.play('coin', 1.5); track('task', t.id); }
-  for (const a of r.ach) { toast(`🏅 ${a.name}  +${a.reward} 💰`); game.audio.play('coin', 1.5); track('ach', a.id); }
+  for (const a of r.ach) { toast(`${a.icon} ${a.name}  +${a.reward} 💰`); game.audio.play('coin', 1.5); track('ach', `${a.id}_${a.tier + 1}`); }
 };
 setInterval(() => { if (game.state === 'run' && !game.paused) checkProgress(); }, 500);
 let prevBest = 0; try { prevBest = Number(localStorage.getItem('tf_best') || 0); } catch { /* private mode */ }
@@ -155,8 +160,8 @@ let lastRun = { score: 0, dist: 0, tips: 0, saved: false };
 const nameInput = $('nameInput') as HTMLInputElement;
 game.onOver = async (score, dist, tips) => {
   lastRun = { score, dist, tips, saved: false };
-  checkProgress();
-  progress.bankTips(tips);
+  progress.bankTips(tips, dist);
+  checkProgress(true);
   const near = progress.nearest();
   const lines = [
     `<div class="line"><span>Tips banked</span><span class="gain">+${tips} 💰 (${progress.bank})</span></div>`,
