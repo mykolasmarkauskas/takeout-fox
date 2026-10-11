@@ -237,7 +237,6 @@ export class Game {
     this.districtIdx = -1; this.foodIdx = 0; this.nextDelivery = DELIVERY_EVERY;
     this.ui.card.classList.remove('on'); this.ui.customer.classList.remove('on'); this.ui.district.classList.remove('on');
     this.setDistrict(0, false);
-    for (const d of DISTRICTS) new Image().src = A(d.img); // warm the cache for the district cards
     this.ui.orderImg.src = A(FOODS[0]);
     this.updateHud();
   }
@@ -252,11 +251,9 @@ export class Game {
     this.fogTo = d.fog;
     if (!announce) { (this.scene.background as THREE.Color).set(d.sky); (this.scene.fog as THREE.Fog).color.set(d.fog); this.scenery?.setHorizon(this.scene.background as THREE.Color); }
     if (announce) {
-      // show the card only once its picture is in, so a stale district image never flashes
-      const img = this.ui.districtImg;
-      img.src = A(d.img); this.ui.districtName.textContent = d.name;
-      const show = () => { this.ui.district.classList.add('on'); this.districtT = 3; };
-      if (img.complete && img.naturalWidth) show(); else img.decode().then(show, show);
+      // name ribbon only: a picture of another scene popping over the run read as a glitch
+      this.ui.districtName.textContent = d.name;
+      this.ui.district.classList.add('on'); this.districtT = 2.4;
       this.sfx('slide_whistle_up', 1.2);
     }
   }
