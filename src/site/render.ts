@@ -10,6 +10,9 @@ const art = (n: string) => `/art/${n}.webp`;
 const page = (id: string) => PAGES.find((p) => p.id === id)!;
 const url = (p: Page) => SITE + p.path;
 
+/** Cloudflare Web Analytics (cookie-free), same as hellopip.si. */
+export const BEACON = `<script type='module' src='https://static.cloudflareinsights.com/beacon.min.js' data-cf-beacon='{"token": "02b7c493374c43c3997c788cce2c66b5"}'></script>`;
+
 const CSS = `
 :root{--bg:#fff6e8;--paper:#fffdf8;--ink:#3b2116;--muted:#7a5440;--accent:#ff7a1a;--accent-d:#b34a00;--teal:#1f8a7e;--line:#f0dcc0;--hero:#2a1b14}
 *{box-sizing:border-box}
@@ -91,7 +94,8 @@ function head(p: Page, ld: object[]) {
 <meta name="twitter:description" content="${esc(p.description)}" />
 <meta name="twitter:image" content="${og}" />
 <style>${CSS.replace(/\n/g, '')}</style>
-${ld.map((x) => `<script type="application/ld+json">${JSON.stringify(x)}</script>`).join('\n')}`;
+${ld.map((x) => `<script type="application/ld+json">${JSON.stringify(x)}</script>`).join('\n')}
+${BEACON}`;
 }
 
 function top(current: string) {
@@ -200,7 +204,7 @@ const RENDER: Record<string, () => { head: string; body: string }> = { home, how
 export function renderPage(id: string) { return RENDER[id](); }
 
 export function render404() {
-  return `<!doctype html><html lang="en"><head><meta charset="utf-8" /><meta name="viewport" content="width=device-width, initial-scale=1" /><meta name="robots" content="noindex" /><title>Page not found · ${NAME}</title><link rel="icon" type="image/png" href="/favicon.png" /><style>${CSS.replace(/\n/g, '')}</style></head><body>${top('')}<div class="page-head"><div class="wrap"><h1>This rooftop doesn’t exist</h1><p>Marm took a wrong turn. The page you were looking for isn’t here.</p></div></div><main class="wrap"><section><a class="btn" href="/play/">${COMMON.play}</a> <p><a href="/">Back to the ${NAME} home page</a></p></section></main>${foot()}</body></html>`;
+  return `<!doctype html><html lang="en"><head><meta charset="utf-8" /><meta name="viewport" content="width=device-width, initial-scale=1" /><meta name="robots" content="noindex" /><title>Page not found · ${NAME}</title><link rel="icon" type="image/png" href="/favicon.png" /><style>${CSS.replace(/\n/g, '')}</style>${BEACON}</head><body>${top('')}<div class="page-head"><div class="wrap"><h1>This rooftop doesn’t exist</h1><p>Marm took a wrong turn. The page you were looking for isn’t here.</p></div></div><main class="wrap"><section><a class="btn" href="/play/">${COMMON.play}</a> <p><a href="/">Back to the ${NAME} home page</a></p></section></main>${foot()}</body></html>`;
 }
 
 export function renderSitemap(date: string) {
