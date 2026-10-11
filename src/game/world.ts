@@ -212,19 +212,7 @@ const signFace = new Map<string, THREE.Material>();
 const signWood = new THREE.MeshStandardMaterial({ color: 0x7a4a2a, roughness: 0.8 });
 const signGeo = new THREE.BoxGeometry(2.4, 0.94, 0.08);
 const gateBoardGeo = new THREE.BoxGeometry(3.6, 1.4, 0.16);
-const posterGeo = new THREE.BoxGeometry(2.6, 1.62, 0.1);
 const glowMats = new Map<number, THREE.SpriteMaterial>();
-const GAG_POSTERS = ['gag_01_chimney_therapy', 'gag_02_pigeon_union', 'gag_03_raccoon_mirror', 'gag_04_noodle_meeting', 'gag_05_seagull'];
-const posterMats = new Map<string, THREE.Material>();
-const posterMat = (n: string) => {
-  let m = posterMats.get(n);
-  if (!m) {
-    const t = new THREE.TextureLoader().load(`${import.meta.env.BASE_URL}art/${n}.webp`);
-    t.colorSpace = THREE.SRGBColorSpace;
-    posterMats.set(n, (m = new THREE.MeshStandardMaterial({ map: t, roughness: 0.6 })));
-  }
-  return m;
-};
 const coinFaceMat = new THREE.MeshPhysicalMaterial({ map: COIN_TEX, bumpMap: COIN_TEX, bumpScale: 2.5, emissive: 0x6a3d00, emissiveIntensity: 0.25, roughness: 0.32, metalness: 0.6, clearcoat: 0.8, clearcoatRoughness: 0.15 });
 
 const _m = new THREE.Matrix4(), _q = new THREE.Quaternion(), _e = new THREE.Euler(), _v = new THREE.Vector3(), _s = new THREE.Vector3(1, 1, 1);
@@ -579,7 +567,7 @@ export class Chunk {
   }
 
   /** Gag set pieces and posters: the jokes live in the world now, the run never stops for them. */
-  gags: { z: number; cap: string }[] = [];
+  gags: { z: number; cap: string; img: string }[] = [];
   private gagSpot(rnd: () => number) {
     this.gags = [];
     const at = this.startDist + CHUNK_LEN / 2;
@@ -588,12 +576,12 @@ export class Chunk {
     if (inChunk >= this.startDist && inChunk < this.startDist + CHUNK_LEN && inChunk > 150) {
       const z = -(inChunk - this.startDist), s = slot % 2 ? 1 : -1;
       const far = this.th.far;
-      const opts: [string, string][] = far === 'sea'
-        ? [['seagull', 'Meanwhile, a seagull tries to order takeout...']]
+      const opts: [string, string, string][] = far === 'sea'
+        ? [['seagull', 'Seagull at the kiosk tries to order takeout, again. Staff "losing hope"', 'gag_05_seagull']]
         : far === 'garden'
-          ? [['raccoonmirror', 'Meanwhile, the Crowd rehearses menace...']]
-          : [['pigeons', 'Meanwhile, the Pigeon Union votes...'], ['chimneytherapy', 'Meanwhile, at Chimney Therapy...']];
-      const [key, cap] = opts[slot % opts.length];
+          ? [['raccoonmirror', 'The Crowd seen rehearsing menacing faces in a garden mirror', 'gag_03_raccoon_mirror']]
+          : [['pigeons', 'Pigeon Union votes to strike over the crumb shortage', 'gag_02_pigeon_union'], ['chimneytherapy', 'Chimney starts therapy, says it "always feels blocked"', 'gag_01_chimney_therapy']];
+      const [key, cap, img] = opts[slot % opts.length];
       if (kitHas(key)) {
         // a little stage by the curb: clear the props around it, a plinth, a warm spotlight glow
         const gx = s * 5.6;
@@ -605,18 +593,8 @@ export class Chunk {
         this.put(new THREE.TorusGeometry(2.05, 0.09, 6, 28), M.bulb, gx, top + 0.02, z, Math.PI / 2);
         this.kit(key, gx, top, z, this.facing(s) + 0.45 * s, 1);
         this.glow(gx, 3.2, z, 7, 0xfff0c8);
-        this.gags.push({ z, cap });
+        this.gags.push({ z, cap, img });
       }
-    }
-    // posters of the cutaway gags on boards at the curb
-    if (rnd() < 0.3) {
-      const sd = rnd() < 0.5 ? -1 : 1, pz = -6 - rnd() * (CHUNK_LEN - 12);
-      const img = GAG_POSTERS[Math.floor(rnd() * GAG_POSTERS.length)];
-      const board = new THREE.Mesh(posterGeo, [signWood, signWood, signWood, signWood, posterMat(img), signWood]);
-      board.position.set(sd * 4.7, 3.2, pz);
-      board.rotation.y = -sd * 0.55;
-      this.dyn.add(board);
-      for (const ox of [-1.1, 1.1]) this.put(new THREE.CylinderGeometry(0.08, 0.1, 3.2, 6), M.pole, sd * 4.7 + ox * Math.cos(sd * 0.55), 1.6, pz + ox * Math.sin(sd * 0.55));
     }
   }
 
