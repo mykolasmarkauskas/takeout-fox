@@ -18,7 +18,7 @@ export const KIT: Record<string, KitSpec> = {
   crate: { url: 'models/crate.glb', fit: 'width', size: 1.75 },
   laundry: { url: 'models/laundry.glb', fit: 'width', size: 2.4 },
   lantern: { url: 'models/lantern.glb', fit: 'height', size: 0.85 },
-  boat: { url: 'models/boat.glb', fit: 'max', size: 5.2 },
+  boat: { url: 'models/boat.glb', fit: 'max', size: 6.5 },
   tree: { url: 'models/tree.glb', fit: 'height', size: 4.2 },
 };
 
