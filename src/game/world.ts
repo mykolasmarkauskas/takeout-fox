@@ -68,6 +68,8 @@ const M = {
 };
 /** District looks. Index matches Game's DISTRICTS (one district every DISTRICT_LEN metres). */
 export const DISTRICT_LEN = 700;
+/** Matches the scene fog's far distance (Game). */
+export const FOG_END = 110;
 export const districtAt = (dist: number) => Math.floor(Math.max(0, dist) / DISTRICT_LEN) % 3;
 const BLEND = 45; // metres either side of a boundary where the two looks mix
 interface Theme { roof: [THREE.Material, THREE.Material]; kits: string[]; lanterns: THREE.Material[]; far: 'town' | 'sea' | 'garden'; chimneys: number; curb: 'none' | 'bollard' | 'pot' }
@@ -259,7 +261,7 @@ export class Chunk {
       list.forEach((g) => g.dispose());
       if (!merged) continue;
       const mesh = new THREE.Mesh(merged, m);
-      mesh.castShadow = true; mesh.receiveShadow = true;
+      mesh.castShadow = false; mesh.receiveShadow = true; // roadside decor: lit, but not drawn into the shadow map
       mesh.userData.own = true;
       this.dyn.add(mesh);
     }
@@ -482,7 +484,6 @@ export class Chunk {
       const board = new THREE.Mesh(signGeo, [signWood, signWood, signWood, signWood, face, signWood]);
       board.position.set(sd * 4.25, 2.6, sz);
       board.rotation.y = -sd * 0.45;
-      board.castShadow = true;
       this.dyn.add(board);
       this.put(new THREE.CylinderGeometry(0.07, 0.09, 2.3, 6), M.pole, sd * 4.25, 1.15, sz);
     }
@@ -551,7 +552,6 @@ export class Chunk {
   }
   private addCoin(lane: number, z: number, y: number) {
     const m = new THREE.Mesh(geo.coin, [coinEdgeMat, coinFaceMat, coinFaceMat]);
-    m.castShadow = true;
     m.rotation.x = Math.PI / 2;
     m.position.set(LANES[lane], y, z);
     this.dyn.add(m);
@@ -654,7 +654,10 @@ export class World {
 
   /** Move the world toward the camera by dz and recycle chunks that passed. */
   advance(dz: number, difficulty: number) {
-    for (const c of this.chunks) c.group.position.z += dz;
+    for (const c of this.chunks) {
+      c.group.position.z += dz;
+      c.group.visible = c.group.position.z > -FOG_END; // beyond the fog it is all fog colour anyway
+    }
     let minZ = Infinity;
     for (const c of this.chunks) minZ = Math.min(minZ, c.group.position.z);
     for (const c of this.chunks) {

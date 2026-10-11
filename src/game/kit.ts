@@ -40,7 +40,8 @@ export function loadKit() {
       root.position.set(-(box.min.x + box.max.x) / 2, -box.min.y, -(box.min.z + box.max.z) / 2);
       root.traverse((o) => {
         if (o instanceof THREE.Mesh) {
-          o.castShadow = true; o.receiveShadow = true;
+          // houses sit away from the path: no need to draw them into the shadow map
+          o.castShadow = !key.startsWith('bld_'); o.receiveShadow = !key.startsWith('bld_');
           const m = o.material as THREE.MeshStandardMaterial;
           if (m && 'metalness' in m) { m.metalness = 0; m.roughness = Math.max(0.45, m.roughness); }
         }
