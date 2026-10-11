@@ -63,6 +63,7 @@ const M = {
   roofTileA: std(0x6f4a3c, 0.6),
   roofTileB: std(0x5e3d32, 0.6),
   pole: std(0x5a3a28, 0.7),
+  gateRed: std(0xb8321f, 0.55),
   lanternRed: new THREE.MeshStandardMaterial({ color: 0xd8301f, emissive: 0xff2a10, emissiveIntensity: 1.0, roughness: 0.4 }),
   lanternGold: new THREE.MeshStandardMaterial({ color: 0xff9a1a, emissive: 0xff8a10, emissiveIntensity: 0.95, roughness: 0.4 }),
 };
@@ -71,7 +72,17 @@ export const DISTRICT_LEN = 700;
 /** Matches the scene fog's far distance (Game). */
 export const FOG_END = 110;
 export const districtAt = (dist: number) => Math.floor(Math.max(0, dist) / DISTRICT_LEN) % 3;
-const BLEND = 45; // metres either side of a boundary where the two looks mix
+const BLEND = 90; // metres either side of a boundary where the two looks mix
+const smooth = (x: number) => { x = Math.min(1, Math.max(0, x)); return x * x * (3 - 2 * x); };
+/** Which two districts mix at this distance and how far along (t 0..1) the change is. */
+export function districtMix(dist: number) {
+  const d = Math.max(0, dist), n = Math.round(d / DISTRICT_LEN), B = n * DISTRICT_LEN;
+  if (n > 0 && Math.abs(d - B) < BLEND) return { a: (n - 1) % 3, b: n % 3, t: smooth((d - B + BLEND) / (2 * BLEND)) };
+  const i = districtAt(d);
+  return { a: i, b: i, t: 0 };
+}
+/** Stable 0..1 noise per ~9 m block, so the mix comes in clumps rather than salt and pepper. */
+const blockHash = (dist: number) => { const x = Math.sin(Math.floor(dist / 9) * 127.1 + 311.7) * 43758.5453; return x - Math.floor(x); };
 interface Theme { roof: [THREE.Material, THREE.Material]; kits: string[]; lanterns: THREE.Material[]; far: 'town' | 'sea' | 'garden'; chimneys: number; curb: 'none' | 'bollard' | 'pot' }
 const THEMES: Theme[] = [
   { roof: [M.roofTileA, M.roofTileB], kits: ['bld_noodle', 'bld_tower', 'bld_teal'], lanterns: [M.lanternRed, M.lanternGold, M.lanternRed], far: 'town', chimneys: 2, curb: 'none' },
@@ -147,6 +158,7 @@ function coinFace() {
 const COIN_TEX = coinFace();
 
 /** Hand-painted pun signs along the route, per district. */
+const GATE_NAMES = ['NOODLE ROOFS', 'HARBOUR LIGHTS', 'GARDEN TERRACES'];
 const SIGNS: string[][] = [
   ['WOK THIS WAY →', 'PHO-NOMENAL NOODLES', 'NO RUNNING ON ROOFS (lol)', 'RACCOONS: PLEASE KNOCK', 'LOST: 1 CHOPSTICK', 'DUMPLING SUPPORT GROUP — TUE', 'HONK IF HANGRY', 'SOUP OF THE DAY: YES', 'TIPS MAKE FOXES FAST', 'CAUTION: SPICY ZONE'],
   ['FISH & TIPS', 'THE KRAKEN IS ON BREAK', 'SEAGULLS ARE NOT WAITERS', 'BOATS: NO DELIVERY', 'SHRIMPLY THE BEST', 'ANCHOVY? AN-CHO-VERY!', 'DO NOT FEED THE CAPTAIN'],
@@ -182,6 +194,7 @@ function signTexture(text: string) {
 const signFace = new Map<string, THREE.Material>();
 const signWood = new THREE.MeshStandardMaterial({ color: 0x7a4a2a, roughness: 0.8 });
 const signGeo = new THREE.BoxGeometry(2.4, 0.94, 0.08);
+const gateBoardGeo = new THREE.BoxGeometry(3.6, 1.4, 0.16);
 const coinFaceMat = new THREE.MeshPhysicalMaterial({ map: COIN_TEX, bumpMap: COIN_TEX, bumpScale: 2.5, emissive: 0x6a3d00, emissiveIntensity: 0.25, roughness: 0.32, metalness: 0.6, clearcoat: 0.8, clearcoatRoughness: 0.15 });
 const coinEdgeMat = new THREE.MeshPhysicalMaterial({ color: 0xe9a21c, emissive: 0x6a3d00, emissiveIntensity: 0.25, roughness: 0.3, metalness: 0.65, clearcoat: 0.8 });
 
@@ -311,13 +324,30 @@ export class Chunk {
   /** Distance (m) at which the player crosses this chunk's local z = 0. */
   startDist = 0;
   /** Which district look to use at local z, blending randomly near a boundary. */
-  private themeAt(z: number, rnd: () => number) {
+  private themeAt(z: number, _rnd?: () => number) {
     const dist = this.startDist - z;
-    const i = districtAt(dist);
-    const into = Math.max(0, dist) % DISTRICT_LEN; // metres into the current district
-    if (dist > DISTRICT_LEN && into < BLEND && rnd() > 0.5 + into / (2 * BLEND)) return THEMES[districtAt(dist - BLEND)];
-    if (DISTRICT_LEN - into < BLEND && rnd() > 0.5 + (DISTRICT_LEN - into) / (2 * BLEND)) return THEMES[districtAt(dist + BLEND)];
-    return THEMES[i];
+    const m = districtMix(dist);
+    return THEMES[m.t > 0 && blockHash(dist) < m.t ? m.b : m.a];
+  }
+  private roofMats = [M.roofTileA.clone(), M.roofTileB.clone()] as THREE.MeshStandardMaterial[];
+
+  /** Paifang-style arch with the new district's name, the hand-over point between two looks. */
+  private gate(z: number, idx: number) {
+    const name = GATE_NAMES[idx];
+    for (const sd of [-1, 1]) {
+      this.box(0.55, 7.4, 0.55, 0.12, M.gateRed, sd * 4.3, 3.7, z);
+      this.box(0.95, 0.5, 0.95, 0.12, M.terrace, sd * 4.3, 0.25, z);
+    }
+    this.box(10.2, 0.45, 0.6, 0.15, M.gateRed, 0, 6.3, z);
+    this.box(11.4, 0.35, 1.5, 0.15, THEMES[idx].roof[0], 0, 7.6, z);
+    this.box(10.4, 0.3, 1.2, 0.12, THEMES[idx].roof[1], 0, 7.95, z);
+    this.box(9.6, 0.4, 0.5, 0.12, M.gateRed, 0, 7.15, z);
+    let face = signFace.get(name);
+    if (!face) signFace.set(name, (face = new THREE.MeshStandardMaterial({ map: signTexture(name), roughness: 0.75 })));
+    const board = new THREE.Mesh(gateBoardGeo, [signWood, signWood, signWood, signWood, face, signWood]);
+    board.position.set(0, 6.8, z + 0.36);
+    this.dyn.add(board);
+    for (const sd of [-1, 1]) this.put(geo.lantern.clone(), M.lanternRed, sd * 3.2, 5.65, z + 0.1, 0, 0, 0, 1.1, 1.3, 1.1);
   }
 
   private garland(z: number, rnd: () => number, th: Theme) {
@@ -408,8 +438,17 @@ export class Chunk {
     this.smoke = [];
     this.boats = [];
     const mid = this.themeAt(-CHUNK_LEN / 2, () => 0.5);
-    this.roofA.material = mid.roof[0];
-    this.roofB.material = mid.roof[1];
+    // roof tiles shade gradually through a district change instead of snapping per chunk
+    const mm = districtMix(this.startDist + CHUNK_LEN / 2);
+    for (let r = 0; r < 2; r++) {
+      const ca = (THEMES[mm.a].roof[r] as THREE.MeshStandardMaterial).color, cb = (THEMES[mm.b].roof[r] as THREE.MeshStandardMaterial).color;
+      this.roofMats[r].color.copy(ca).lerp(cb, mm.t);
+    }
+    this.roofA.material = this.roofMats[0];
+    this.roofB.material = this.roofMats[1];
+    // a gate over the street where one district hands over to the next
+    const gateD = Math.round((this.startDist + CHUNK_LEN / 2) / DISTRICT_LEN) * DISTRICT_LEN;
+    if (gateD > 0 && gateD >= this.startDist && gateD < this.startDist + CHUNK_LEN) this.gate(-(gateD - this.startDist), districtAt(gateD));
     const have = new Set(kitKeys('bld_'));
     for (const s of [-1, 1]) {
       // near row: Tripo houses below the roofline, varied size/turn, with the odd gap

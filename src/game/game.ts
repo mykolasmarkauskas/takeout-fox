@@ -1,7 +1,7 @@
 import * as THREE from 'three';
 import { createRaccoon, animateRaccoon, Raccoon, loadRaccoonGLB, raccoonInstance } from './raccoon';
 import { Scenery } from './scenery';
-import { districtAt, FOG_END } from './world';
+import { districtAt, districtMix, FOG_END } from './world';
 import { RoomEnvironment } from 'three/examples/jsm/environments/RoomEnvironment.js';
 import { Audio, SfxName } from './audio';
 import { BASE_SPEED, COLORS, GRAVITY, HIT_WINDOW, JUMP_V, LANES, MAX_SPEED, SLIDE_TIME } from './constants';
@@ -257,6 +257,15 @@ export class Game {
     }
   }
   private fogTo = COLORS.fog;
+  private _ca = new THREE.Color(); private _cb = new THREE.Color();
+  /** Light follows the street: through a district change the sky and fog shift with every metre run. */
+  private blendSky() {
+    const m = districtMix(this.distance + 25); // a little ahead, where the eye is
+    const bg = this.scene.background as THREE.Color, fog = (this.scene.fog as THREE.Fog).color;
+    bg.copy(this._ca.set(DISTRICTS[m.a].sky)).lerp(this._cb.set(DISTRICTS[m.b].sky), m.t);
+    fog.copy(this._ca.set(DISTRICTS[m.a].fog)).lerp(this._cb.set(DISTRICTS[m.b].fog), m.t).lerp(bg, 0.6);
+    this.scenery.setHorizon(bg);
+  }
 
   private deliver() {
     const c = pick(CUSTOMERS);
@@ -352,12 +361,7 @@ export class Game {
     if (this.bubbleT > 0 && (this.bubbleT -= dt) <= 0) this.ui.bubble.classList.remove('on');
     if (this.customerT > 0 && (this.customerT -= dt) <= 0) this.ui.customer.classList.remove('on');
     if (this.districtT > 0 && (this.districtT -= dt) <= 0) this.ui.district.classList.remove('on');
-    if (this.skyK < 1) {
-      this.skyK = Math.min(1, this.skyK + dt / 5); // slow, smooth change of light between districts
-      (this.scene.background as THREE.Color).copy(this.skyFrom).lerp(this.skyTo, this.skyK);
-      (this.scene.fog as THREE.Fog).color.copy(this.scene.background as THREE.Color).lerp(new THREE.Color(this.fogTo), 0.4);
-      this.scenery.setHorizon(this.scene.background as THREE.Color);
-    }
+    if (this.state === 'run' || this.state === 'crash') this.blendSky();
 
     if (this.state === 'run') this.updateRun(dt);
     else if (this.state === 'crash') this.updateCrash(dt);
