@@ -16,7 +16,7 @@ const VOICE: Record<string, string> = {
   'Ha! Better than my bread!': 'baker_1', 'Fresh! Almost like mine.': 'baker_2',
   'Hmph. On time.': 'gardener_1', 'Fine. Take a tip.': 'gardener_2',
   'Order delayed!': 'order_delayed', 'The Crowd wins this one.': 'crowd_wins',
-  'Note to self: buy a scooter.': 'q_scooter', 'Five-star delivery, zero-star cardio.': 'q_fivestar',
+  'Extra spicy, extra fast!': 'q_extra_spicy', 'Note to self: buy a scooter.': 'q_scooter', 'Five-star delivery, zero-star cardio.': 'q_fivestar',
   'Is this roof load-bearing?': 'q_roof', 'Smells like victory. And garlic.': 'q_garlic', 'My legs are noodles now.': 'q_noodle_legs',
   'Do raccoons even tip?': 'q_raccoon_tip', 'Rooftops: the original shortcut.': 'q_shortcut', 'Keep calm and carry noodles.': 'q_keep_calm',
   "If I drop it, it's a salad.": 'q_salad', 'Cardio? I prefer "delivery".': 'q_cardio', 'Grandma Pim would be proud.': 'q_grandma',

@@ -634,7 +634,13 @@ export class Chunk {
       for (const sx of [-1, 1]) add(new THREE.Mesh(new THREE.CylinderGeometry(0.11, 0.13, 0.6, 8), M.pole), sx * 1.45, 0.3, 0).castShadow = true;
       depth = 0.3;
     } else if ((kind === 'chimney' || kind === 'crate') && kitHas(kind)) {
-      g.add(kitClone(kind)!);
+      // the jump-over obstacle wears the district's look: fish barrels at the harbour, a flower cart in the gardens
+      const far = kind === 'crate' ? this.themeAt(z).far : 'town';
+      const key = far === 'sea' && kitHas('barrels') ? 'barrels' : far === 'garden' && kitHas('cart') ? 'cart' : kind;
+      const m = kitClone(key)!;
+      const h = kitSize(key)!.y;
+      if (key !== kind && h > 1.35) m.scale.multiplyScalar(1.35 / h); // never taller than a jump clears (apex ~2.4 m)
+      g.add(m);
       depth = kind === 'chimney' ? 1.5 : kind === 'crate' ? 1.4 : 0.3;
     } else if (kind === 'chimney') {
       add(rbox(1.5, 3.2, 1.5, 0.24, M.brick), 0, 1.6, 0);
