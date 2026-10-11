@@ -20,6 +20,9 @@ export const KIT: Record<string, KitSpec> = {
   lantern: { url: 'models/lantern.glb', fit: 'height', size: 0.85 },
   boat: { url: 'models/boat.glb', fit: 'max', size: 6.5 },
   tree: { url: 'models/tree.glb', fit: 'height', size: 4.2 },
+  // district versions of the jump-over crate
+  barrels: { url: 'models/barrels.glb', fit: 'height', size: 1.35 },
+  cart: { url: 'models/cart.glb', fit: 'width', size: 2.1 },
 };
 
 const ready = new Map<string, THREE.Object3D>();
