@@ -1,6 +1,7 @@
 import * as THREE from 'three';
 import { createRaccoon, animateRaccoon, Raccoon, loadRaccoonGLB, raccoonInstance } from './raccoon';
-import { Scenery } from './scenery';
+import { Scenery, PUFF } from './scenery';
+import { newRunStats, type RunStats } from './progress';
 import { districtAt, districtMix, FOG_END } from './world';
 import { RoomEnvironment } from 'three/examples/jsm/environments/RoomEnvironment.js';
 import { Audio, SfxName } from './audio';
@@ -202,6 +203,47 @@ export class Game {
   private sun: THREE.DirectionalLight;
   private hemi!: THREE.HemisphereLight;
 
+  // ---- small juice: dust puffs, coin sparkles, camera shake, phone buzz
+  private shakeT = 0; private shakeA = 0;
+  private fx: { s: THREE.Sprite; v: THREE.Vector3; life: number; max: number; grow: number }[] = [];
+  private fxPool: THREE.Sprite[] = [];
+  private dustMat = new THREE.SpriteMaterial({ map: PUFF(), color: 0xe8d2b4, transparent: true, depthWrite: false, opacity: 0.8 });
+  private sparkMat = new THREE.SpriteMaterial({ map: PUFF(), color: 0xffd34a, transparent: true, depthWrite: false, blending: THREE.AdditiveBlending });
+  private emit(mat: THREE.SpriteMaterial, x: number, y: number, z: number, v: THREE.Vector3, life: number, size: number, grow: number) {
+    if (this.fx.length > 60) return;
+    const s = this.fxPool.pop() ?? new THREE.Sprite();
+    s.material = mat.clone(); s.position.set(x, y, z); s.scale.setScalar(size);
+    this.scene.add(s);
+    this.fx.push({ s, v, life, max: life, grow });
+  }
+  private dust(x: number, n: number) {
+    if (this.q === 2) n = Math.ceil(n / 2);
+    for (let i = 0; i < n; i++) {
+      const a = (i / n) * Math.PI * 2 + Math.random() * 0.5;
+      this.emit(this.dustMat, x + Math.cos(a) * 0.3, 0.15, Math.sin(a) * 0.3, new THREE.Vector3(Math.cos(a) * 1.6, 0.5 + Math.random() * 0.6, Math.sin(a) * 1.2 + 2), 0.45 + Math.random() * 0.2, 0.45, 1.8);
+    }
+  }
+  private sparkle(x: number, y: number, z: number) {
+    for (let i = 0; i < 5; i++) {
+      const a = Math.random() * Math.PI * 2;
+      this.emit(this.sparkMat, x, y, z, new THREE.Vector3(Math.cos(a) * 2.2, Math.sin(a) * 2.2 + 1, 1.5), 0.3, 0.32, -0.6);
+    }
+  }
+  private updateFx(dt: number) {
+    if (this.shakeT > 0) this.shakeT -= dt;
+    for (let i = this.fx.length - 1; i >= 0; i--) {
+      const f = this.fx[i];
+      f.life -= dt;
+      if (f.life <= 0) { this.scene.remove(f.s); (f.s.material as THREE.Material).dispose(); this.fxPool.push(f.s); this.fx.splice(i, 1); continue; }
+      f.s.position.addScaledVector(f.v, dt);
+      f.v.multiplyScalar(1 - dt * 3);
+      const k = f.life / f.max;
+      (f.s.material as THREE.SpriteMaterial).opacity = k * 0.85;
+      f.s.scale.multiplyScalar(1 + f.grow * dt);
+    }
+  }
+  private buzz(p: number | number[]) { try { navigator.vibrate?.(p); } catch { /* not supported */ } }
+
   /**
    * Quality: 0 full, 1 lighter (lower resolution, smaller shadow map), 2 battery saver
    * (1x resolution, no shadows). Steps down by itself when the phone can't keep ~50 fps;
@@ -253,7 +295,11 @@ export class Game {
     this.bubbleT = ms / 1000;
   }
 
+  /** Per-run counters for daily tasks and achievements. */
+  run: RunStats = newRunStats();
+  private cleanFrom = 0;
   resetRun() {
+    this.run = newRunStats(); this.cleanFrom = 0;
     this.world.reset((Math.random() * 1e9) | 0);
     this.distance = 0; this.coins = 0; this.speed = BASE_SPEED;
     this.lane = 1; this.x = 0; this.y = 0; this.vy = 0; this.slideT = 0;
@@ -295,6 +341,7 @@ export class Game {
     fog.copy(this._ca.set(DISTRICTS[m.a].fog)).lerp(this._cb.set(DISTRICTS[m.b].fog), m.t).lerp(bg, 0.6);
     this.scenery.setHorizon(bg, this._cb.set(DISTRICTS[m.a].top).lerp(this._ca.set(DISTRICTS[m.b].top), m.t));
     this.scenery.setMix(m.a, m.b, m.t);
+    this.audio.ambience?.mix(m.a, m.b, m.t);
     // light per district: warm sunset roofs, cool dusk harbour, fresh green gardens
     const L = LIGHT[m.a], R = LIGHT[m.b], k = m.t;
     this.sun.color.setHex(L.sun).lerp(this._ca.setHex(R.sun), k);
@@ -345,11 +392,12 @@ export class Game {
   }
   private doJump() {
     this.vy = JUMP_V; this.slideT = 0; this.jumpBuf = 0; this.sfx('jump');
+    if (this.state === 'run') this.run.jumps++;
   }
   slide() {
     if (this.state !== 'run' || this.paused) return;
     if (this.y > 0.01) { this.vy = Math.min(this.vy, -JUMP_V * 1.2); this.slideBuf = 0.3; return; } // fast-fall, slide on landing
-    this.slideT = SLIDE_TIME; this.sfx('swipe', 0.8);
+    this.slideT = SLIDE_TIME; this.sfx('swipe', 0.8); this.run.slides++;
   }
 
   // ---- loop
@@ -401,6 +449,14 @@ export class Game {
     if (this.customerT > 0 && (this.customerT -= dt) <= 0) this.ui.customer.classList.remove('on');
     if (this.districtT > 0 && (this.districtT -= dt) <= 0) this.ui.district.classList.remove('on');
     if (this.state === 'run' || this.state === 'crash') this.blendSky();
+    const amb = this.audio.ambience;
+    if (amb) {
+      const run = this.state === 'run';
+      if (run !== amb.on) amb.set(this.audio.vol.sfx, run);
+      amb.tick(dt);
+    }
+    this.updateFx(dt);
+    if (this.state === 'run') { this.run.dist = this.distance; this.run.bestClean = Math.max(this.run.bestClean, this.distance - this.cleanFrom); }
 
     if (this.state === 'run') this.updateRun(dt);
     else if (this.state === 'crash') this.updateCrash(dt);
@@ -439,10 +495,10 @@ export class Game {
     if (this.jumpBuf > 0) this.jumpBuf -= dt;
     if (this.slideBuf > 0) this.slideBuf -= dt;
     if (this.y <= 0) {
-      if (this.y < -0.001 && this.vy < -6) this.sfx('land');
+      if (this.y < -0.001 && this.vy < -6) { this.sfx('land'); this.dust(this.x, 6); }
       this.y = 0; this.vy = 0;
       if (this.jumpBuf > 0) this.doJump();
-      else if (this.slideBuf > 0) { this.slideBuf = 0; this.slideT = SLIDE_TIME; this.sfx('swipe', 0.8); }
+      else if (this.slideBuf > 0) { this.slideBuf = 0; this.slideT = SLIDE_TIME; this.sfx('swipe', 0.8); this.run.slides++; }
     }
     if (this.slideT > 0) this.slideT -= dt;
     const sliding = this.slideT > 0 && this.y < 0.05;
@@ -477,6 +533,8 @@ export class Game {
         k.mesh.rotation.z += dt * 4;
         if (Math.abs(z) < 0.8 && k.lane === this.nearestLane() && Math.abs(k.mesh.position.y - (this.y + 1.0)) < 1.3) {
           k.taken = true; k.mesh.visible = false; this.coins++; this.sfx('coin', 1 + (this.coins % 8) * 0.04);
+          this.sparkle(k.mesh.position.x, k.mesh.position.y, z);
+          this.run.tips++; this.run.tipsD[districtAt(this.distance)]++;
           if (this.coins % 15 === 0) this.say(pick(BARKS.coin));
         }
       }
@@ -509,8 +567,9 @@ export class Game {
   }
 
   private collect(kind: 'hotbag' | 'chilli' | 'umbrella') {
+    this.buzz(25); this.run.pickups++;
     if (kind === 'hotbag') { this.shield = true; this.sfx('hot_bag'); this.say('Hot bag! Shielded.'); }
-    else if (kind === 'chilli') { this.dashT = 4; this.sfx('chilli_whoosh'); this.say('Chilli dash!'); }
+    else if (kind === 'chilli') { this.dashT = 4; this.sfx('chilli_whoosh'); this.say('Chilli dash!'); this.shakeT = 0.4; this.shakeA = 0.12; }
     else { this.floatT = 8; this.sfx('umbrella_open'); this.say('Floaty umbrella!'); }
     this.showPower();
   }
@@ -536,7 +595,8 @@ export class Game {
       return;
     }
     if (this.time - this.lastHit < HIT_WINDOW) { this.crash(kind); return; }
-    this.lastHit = this.time;
+    this.lastHit = this.time; this.cleanFrom = this.distance;
+    this.buzz(70); this.shakeT = 0.35; this.shakeA = 0.22; this.dust(this.x, 8);
     this.chaseGap = 2.2;
     this.speed *= 0.8;
     this.sfx('boing'); this.sfx('slide_whistle_down');
@@ -545,6 +605,7 @@ export class Game {
 
   private crash(kind: string) {
     this.state = 'crash'; this.crashT = 0; this.crashKind = kind;
+    this.buzz([90, 40, 120]); this.shakeT = 0.5; this.shakeA = 0.3;
     this.audio.stopMusic();
     this.sfx(kind === 'chimney' ? 'crash_thud' : kind === 'laundry' ? 'pop' : kind === 'gap' ? 'slide_whistle_down' : 'dizzy_stars');
     this.sfx('dust_dogpile');
@@ -643,6 +704,10 @@ export class Game {
     const wide = this.camera.aspect > 1 ? 1 : 0;
     this.camera.position.set(cx, 3.25 + k * 0.45 + wide * 0.5, 6.3 + k * 0.9 + wide * 0.8);
     this.camera.lookAt(cx * 0.7, 1.75 + k * 0.1, -18);
+    if (this.shakeT > 0) {
+      const a = this.shakeA * Math.min(1, this.shakeT / 0.25);
+      this.camera.position.x += (Math.random() - 0.5) * a; this.camera.position.y += (Math.random() - 0.5) * a * 0.6;
+    }
     this.sun.position.set(f.position.x - 6, 14, 8);
     this.sun.target.position.set(f.position.x, 0, 0);
     this.world.syncInstances(this.camera);

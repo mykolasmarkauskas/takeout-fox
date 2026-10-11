@@ -1,3 +1,4 @@
+import { Ambience } from './ambience';
 const SFX = [
   'slide_whistle_up', 'slide_whistle_down', 'boing', 'pop', 'coin', 'chilli_whoosh', 'hot_bag', 'umbrella_open',
   'swipe', 'jump', 'land', 'crash_thud', 'glass_break', 'dust_dogpile', 'dizzy_stars', 'pigeon_coo', 'game_over', 'ui_click', 'run_start',
@@ -46,6 +47,7 @@ export class Audio {
     this.musicGain!.gain.setTargetAtTime(this.MUSIC * this.vol.music, t, 0.05);
     this.sfxGain!.gain.setTargetAtTime(0.9 * this.vol.sfx, t, 0.05);
     this.voiceGain!.gain.setTargetAtTime(1.0 * this.vol.voice, t, 0.05);
+    this.ambience?.set(this.vol.sfx, this.ambience.on);
   }
   /** Freeze/unfreeze every sound (pause menu, tab hidden). */
   suspend() { if (this.ctx && this.ctx.state === 'running') this.ctx.suspend(); }
@@ -65,11 +67,13 @@ export class Audio {
       this.voiceGain = this.ctx.createGain();
       this.voiceGain.gain.value = this.vol.voice;
       this.voiceGain.connect(this.ctx.destination);
+      this.ambience = new Ambience(this.ctx, this.ctx.destination);
       this.loading = this.loadAll();
     }
     if (this.ctx.state === 'suspended' && !this.pausedByGame) this.ctx.resume();
   }
   pausedByGame = false;
+  ambience: Ambience | null = null;
 
   private async load(path: string) {
     try {

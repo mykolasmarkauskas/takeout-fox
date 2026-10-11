@@ -87,6 +87,38 @@
   #over .row{display:flex;gap:10px;width:min(100%,360px)}
   #over .row .btn{flex:1;padding:12px 10px;font-size:20px}
   #over .lb{width:min(100%,360px);background:rgba(255,246,230,.95);color:#3b2116;border-radius:18px;padding:12px}
+  .menu-row{display:flex;gap:10px;justify-content:center;flex-wrap:wrap}
+  .chip{border:0;border-radius:999px;padding:9px 16px;font-weight:900;font-size:clamp(14px,3.8vw,18px);background:rgba(255,246,230,.95);color:#5a2a14;box-shadow:0 4px 0 rgba(0,0,0,.25);cursor:pointer;position:relative}
+  .chip:active{transform:translateY(2px);box-shadow:0 2px 0 rgba(0,0,0,.25)}
+  .chip .dot{position:absolute;top:-4px;right:-4px;width:14px;height:14px;border-radius:50%;background:#e2452f;border:2px solid #fff}
+  .bank{font-weight:900;background:rgba(60,30,15,.6);padding:5px 14px;border-radius:999px;font-size:clamp(14px,3.8vw,18px)}
+  .task{display:flex;flex-direction:column;gap:5px;text-align:left;background:#f4e4cc;border-radius:14px;padding:10px 12px}
+  .task.done{background:#d9f0d2}
+  .task b{font-size:15px}
+  .task .meta{display:flex;justify-content:space-between;font-size:13px;font-weight:700;opacity:.8}
+  .bar{height:9px;border-radius:9px;background:#e2c49c;overflow:hidden}
+  .bar i{display:block;height:100%;background:#ff7a1a;border-radius:9px;transition:width .4s}
+  .task.done .bar i{background:#3aa65a}
+  .ach{display:flex;gap:10px;align-items:center;text-align:left;padding:6px 4px;font-size:14px}
+  .ach .ic{font-size:22px;width:28px;text-align:center}
+  .ach.locked{opacity:.5}
+  .ach small{display:block;opacity:.75;font-weight:600}
+  .sub{margin:4px 0 0;font-size:18px;text-align:left}
+  .shop{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+  .item{border:2px solid #e2c49c;border-radius:14px;padding:10px 8px;display:flex;flex-direction:column;align-items:center;gap:6px;background:#fff;cursor:pointer;font:inherit;color:inherit}
+  .item.on{border-color:#ff7a1a;box-shadow:0 0 0 3px #ffcf8a}
+  .item .sw{width:38px;height:38px;border-radius:50%;border:3px solid rgba(0,0,0,.12)}
+  .item b{font-size:13px;line-height:1.15}
+  .item span{font-size:13px;font-weight:800;color:#b35a1e}
+  .item.locked span::before{content:'🔒 '}
+  .toast{position:absolute;left:50%;top:calc(110px + env(safe-area-inset-top));transform:translate(-50%,-14px);opacity:0;transition:opacity .3s,transform .3s cubic-bezier(.2,1.4,.4,1);background:#2e9e91;color:#fff;font-weight:900;padding:8px 16px;border-radius:14px;box-shadow:0 4px 0 rgba(0,0,0,.25);pointer-events:none;z-index:5;max-width:88%;text-align:center;font-size:clamp(13px,3.6vw,17px)}
+  .toast.on{opacity:1;transform:translate(-50%,0)}
+  .goals{width:min(100%,360px);background:rgba(255,246,230,.95);color:#3b2116;border-radius:18px;padding:10px 12px;display:flex;flex-direction:column;gap:6px;text-align:left;font-weight:700;font-size:14px}
+  .goals .line{display:flex;justify-content:space-between;gap:8px}
+  .goals .gain{color:#2e7d4b;font-weight:900}
+  .tabs{display:flex;gap:6px;justify-content:center}
+  .tabs button{border:0;border-radius:999px;padding:6px 14px;font-weight:800;background:#e8d6bf;color:#5a2a14;cursor:pointer}
+  .tabs button.on{background:#ff7a1a;color:#fff}
   .hidden{display:none}
 </style>
 </head>
@@ -100,8 +132,9 @@
   <img class="card" id="card" alt="">
   <div class="bubble" id="bubble"></div>
   <button class="icon-btn hidden" id="pauseBtn" type="button" aria-label="Pause">❚❚</button>
-  <div class="panel menu" id="menu"><button class="icon-btn" id="menuBoard" type="button" aria-label="Top scores">🏆</button><button class="icon-btn" id="menuSettings" type="button" aria-label="Settings">⚙︎</button><h1>Takeout Fox</h1><p>Swipe or use arrow keys: left, right, jump, slide</p><button class="btn" id="play">Run!</button><button class="link" id="story" type="button">Story</button></div>
-  <div class="panel hidden" id="over"><h1 id="overTitle">Dropped!</h1><p id="overText"></p>
+  <div class="panel menu" id="menu"><button class="icon-btn" id="menuBoard" type="button" aria-label="Top scores">🏆</button><button class="icon-btn" id="menuSettings" type="button" aria-label="Settings">⚙︎</button><h1>Takeout Fox</h1><p>Swipe or use arrow keys: left, right, jump, slide</p><div class="menu-row"><span class="bank" id="menuBank">💰 0</span></div><button class="btn" id="play">Run!</button><div class="menu-row"><button class="chip" id="menuTasks" type="button">🎯 Daily tasks<i class="dot hidden" id="tasksDot"></i></button><button class="chip" id="menuShop" type="button">🛍 Shop</button></div><button class="link" id="story" type="button">Story</button></div>
+  <div class="toast" id="toast"></div>
+  <div class="panel hidden" id="over"><h1 id="overTitle">Dropped!</h1><p id="overText"></p><div class="goals" id="overGoals"></div>
     <div class="lb" id="overBoard">
       <div class="name-row" id="nameRow"><input id="nameInput" maxlength="14" placeholder="Your name" autocomplete="nickname"><button class="btn alt" id="saveScore" type="button">Save</button></div>
       <div id="overList"></div>
@@ -115,7 +148,9 @@
     <label class="set-row"><span>Battery saver</span><input type="checkbox" id="saver"><small class="set-note">Smoother on older phones</small></label>
     <button class="btn ghost" id="replayIntro" type="button">Watch the story again</button>
     <button class="btn" id="closeSettings" type="button">Done</button></div></div>
-  <div class="sheet hidden" id="board"><div class="box"><h2>🏆 Top couriers</h2><div class="lb" id="boardList">Loading…</div><button class="btn" id="closeBoard" type="button">Close</button></div></div>
+  <div class="sheet hidden" id="tasks"><div class="box"><h2>🎯 Daily tasks</h2><div id="taskList"></div><p class="sub">New tasks every day. Achievements:</p><div id="achList"></div><button class="btn" id="closeTasks" type="button">Close</button></div></div>
+  <div class="sheet hidden" id="shop"><div class="box"><h2>🛍 Shop</h2><span class="bank" id="shopBank" style="align-self:center;color:#fff">💰 0</span><p class="sub">Bags</p><div class="shop" id="shopBags"></div><p class="sub">Extras</p><div class="shop" id="shopAcc"></div><button class="btn" id="closeShop" type="button">Done</button></div></div>
+  <div class="sheet hidden" id="board"><div class="box"><h2>🏆 Top couriers</h2><div class="tabs"><button class="on" id="tabAll" type="button">All time</button><button id="tabToday" type="button">Today</button></div><div class="lb" id="boardList">Loading…</div><button class="btn" id="closeBoard" type="button">Close</button></div></div>
 </div></div>
 <script type="module" src="/src/main.ts"></script>
 <script type='module' src='https://static.cloudflareinsights.com/beacon.min.js' data-cf-beacon='{"token": "02b7c493374c43c3997c788cce2c66b5"}'></script>
