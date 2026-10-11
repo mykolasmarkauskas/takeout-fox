@@ -1,5 +1,6 @@
 import * as THREE from 'three';
 import { createRaccoon, animateRaccoon, Raccoon, loadRaccoonGLB, raccoonInstance } from './raccoon';
+import { Scenery } from './scenery';
 import { RoomEnvironment } from 'three/examples/jsm/environments/RoomEnvironment.js';
 import { Audio, SfxName } from './audio';
 import { BASE_SPEED, COLORS, GRAVITY, HIT_WINDOW, JUMP_V, LANES, MAX_SPEED, SLIDE_TIME } from './constants';
@@ -47,8 +48,9 @@ const DELIVERY_EVERY = 350; // metres between deliveries
 export class Game {
   readonly renderer: THREE.WebGLRenderer;
   readonly scene = new THREE.Scene();
-  readonly camera = new THREE.PerspectiveCamera(58, 9 / 16, 0.1, 140);
+  readonly camera = new THREE.PerspectiveCamera(58, 9 / 16, 0.1, 500);
   readonly world = new World();
+  readonly scenery = new Scenery();
   readonly fox = new FoxActor();
   readonly audio = new Audio();
   private chasers: THREE.Group[] = [];
@@ -125,6 +127,8 @@ export class Game {
     this.sun = sun;
 
     this.scene.add(this.world.group);
+    this.scene.add(this.scenery.group);
+    this.scenery.setHorizon(this.scene.background as THREE.Color);
     loadKit().then(() => { if (this.state === 'menu') this.world.reset(1); });
     this.scene.add(this.fox.group);
     const pw = document.createElement('div');
@@ -231,7 +235,7 @@ export class Game {
     this.skyTo.set(d.sky);
     this.skyK = announce ? 0 : 1;
     this.fogTo = d.fog;
-    if (!announce) { (this.scene.background as THREE.Color).set(d.sky); (this.scene.fog as THREE.Fog).color.set(d.fog); }
+    if (!announce) { (this.scene.background as THREE.Color).set(d.sky); (this.scene.fog as THREE.Fog).color.set(d.fog); this.scenery?.setHorizon(this.scene.background as THREE.Color); }
     if (announce) {
       this.ui.districtImg.src = A(d.img); this.ui.districtName.textContent = d.name;
       this.ui.district.classList.add('on'); this.districtT = 3;
@@ -304,6 +308,7 @@ export class Game {
 
   private update(dt: number) {
     this.time += dt;
+    this.world.tick(dt);
     if (this.bubbleT > 0 && (this.bubbleT -= dt) <= 0) this.ui.bubble.classList.remove('on');
     if (this.customerT > 0 && (this.customerT -= dt) <= 0) this.ui.customer.classList.remove('on');
     if (this.districtT > 0 && (this.districtT -= dt) <= 0) this.ui.district.classList.remove('on');
@@ -311,6 +316,7 @@ export class Game {
       this.skyK = Math.min(1, this.skyK + dt / 2);
       (this.scene.background as THREE.Color).copy(this.skyFrom).lerp(this.skyTo, this.skyK);
       (this.scene.fog as THREE.Fog).color.copy(this.scene.background as THREE.Color).lerp(new THREE.Color(this.fogTo), 0.4);
+      this.scenery.setHorizon(this.scene.background as THREE.Color);
     }
 
     if (this.state === 'run') this.updateRun(dt);
@@ -544,8 +550,9 @@ export class Game {
     }
     const f = this.fox.group;
     const cx = f.position.x * 0.5;
-    this.camera.position.set(cx, 6.4, 10.5);
-    this.camera.lookAt(cx * 0.7, 1.2, -9);
+    // low, close chase cam like the key art: the ridge path fills the frame, roofs either side
+    this.camera.position.set(cx, 4.4, 8.2);
+    this.camera.lookAt(cx * 0.7, 1.7, -14);
     this.sun.position.set(f.position.x - 6, 14, 8);
     this.sun.target.position.set(f.position.x, 0, 0);
     this.renderer.render(this.scene, this.camera);
