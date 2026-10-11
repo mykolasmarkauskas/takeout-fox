@@ -2,6 +2,7 @@ import * as THREE from 'three';
 import { createRaccoon, animateRaccoon, Raccoon, loadRaccoonGLB, raccoonInstance } from './raccoon';
 import { Scenery, PUFF } from './scenery';
 import { newRunStats, type RunStats } from './progress';
+import { track } from './stats';
 import { districtAt, districtMix, FOG_END } from './world';
 import { RoomEnvironment } from 'three/examples/jsm/environments/RoomEnvironment.js';
 import { Audio, SfxName } from './audio';
@@ -365,6 +366,7 @@ export class Game {
   }
 
   start() {
+    track('start');
     this.paused = false; this.audio.pausedByGame = false;
     this.audio.unlock();
     this.resetRun();
@@ -661,6 +663,7 @@ export class Game {
 
   private end() {
     this.state = 'over';
+    track('end', this.crashKind, this.distance, districtAt(this.distance));
     this.ui.card.classList.remove('on');
     this.sfx('game_over');
     const overLine = pick(BARKS.over);

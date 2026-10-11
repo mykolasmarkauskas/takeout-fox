@@ -2,6 +2,7 @@ import { introSeen, playIntro } from './game/intro';
 import { Game } from './game/game';
 import { renderBoard, savedName, submitScore, topScores, type Entry } from './game/leaderboard';
 import { ACHIEVEMENTS, Progress, SHOP } from './game/progress';
+import { track } from './game/stats';
 
 const $ = (id: string) => document.getElementById(id)!;
 const game = new Game($('c') as HTMLCanvasElement, {
@@ -120,7 +121,7 @@ const onItem = (e: Event) => {
   const id = b.dataset.id!;
   if (!progress.owns(id)) {
     if (!progress.buy(id)) { game.audio.play('boing'); b.animate([{ transform: 'translateX(-4px)' }, { transform: 'translateX(4px)' }, { transform: 'none' }], 200); return; }
-    game.audio.play('coin', 0.8);
+    game.audio.play('coin', 0.8); track('buy', id);
   } else click();
   progress.equip(id); applyLook(); renderShop();
 };
@@ -144,8 +145,8 @@ const nextToast = () => {
 };
 const checkProgress = () => {
   const r = progress.check(game.run);
-  for (const t of r.tasks) { toast(`✅ ${t.text}  +${t.reward} 💰`); game.audio.play('coin', 1.5); }
-  for (const a of r.ach) { toast(`🏅 ${a.name}  +${a.reward} 💰`); game.audio.play('coin', 1.5); }
+  for (const t of r.tasks) { toast(`✅ ${t.text}  +${t.reward} 💰`); game.audio.play('coin', 1.5); track('task', t.id); }
+  for (const a of r.ach) { toast(`🏅 ${a.name}  +${a.reward} 💰`); game.audio.play('coin', 1.5); track('ach', a.id); }
 };
 setInterval(() => { if (game.state === 'run' && !game.paused) checkProgress(); }, 500);
 let prevBest = 0; try { prevBest = Number(localStorage.getItem('tf_best') || 0); } catch { /* private mode */ }
@@ -219,3 +220,9 @@ frame.addEventListener('pointerup', (e) => {
   game.jump(); // a short tap also jumps
 });
 frame.addEventListener('pointercancel', () => { down = false; });
+
+// ---- installable app: offline play after the first visit
+if ('serviceWorker' in navigator && location.hostname !== 'localhost') {
+  window.addEventListener('load', () => { navigator.serviceWorker.register('/sw.js').catch(() => { /* not critical */ }); });
+}
+window.addEventListener('appinstalled', () => track('install'));
