@@ -16,6 +16,14 @@ const VOICE: Record<string, string> = {
   'Ha! Better than my bread!': 'baker_1', 'Fresh! Almost like mine.': 'baker_2',
   'Hmph. On time.': 'gardener_1', 'Fine. Take a tip.': 'gardener_2',
   'Order delayed!': 'order_delayed', 'The Crowd wins this one.': 'crowd_wins',
+  'Note to self: buy a scooter.': 'q_scooter', 'Five-star delivery, zero-star cardio.': 'q_fivestar',
+  'Is this roof load-bearing?': 'q_roof', 'Smells like victory. And garlic.': 'q_garlic', 'My legs are noodles now.': 'q_noodle_legs',
+  'Do raccoons even tip?': 'q_raccoon_tip', 'Rooftops: the original shortcut.': 'q_shortcut', 'Keep calm and carry noodles.': 'q_keep_calm',
+  "If I drop it, it's a salad.": 'q_salad', 'Cardio? I prefer "delivery".': 'q_cardio', 'Grandma Pim would be proud.': 'q_grandma',
+  'Nobody touches the dumplings.': 'q_dumplings', 'This counts as a workout, right?': 'q_workout', 'Who builds a chimney THERE?': 'q_chimney_there',
+  'Hot bag! Shielded.': 'hotbag_shield', 'Chilli dash!': 'chilli_dash', 'Floaty umbrella!': 'floaty_umbrella', 'Hot bag saved me!': 'hotbag_saved',
+  '🦝 Share the noodles!': 'h_share', '🦝 Just ONE bite!': 'h_one_bite', '🦝 We have coupons!': 'h_coupons',
+  '🦝 Free samples?!': 'h_samples', '🦝 Is that extra spicy?': 'h_spicy', "🦝 We're not hangry, YOU'RE hangry!": 'h_hangry',
 };
 export type SfxName = (typeof SFX)[number];
 

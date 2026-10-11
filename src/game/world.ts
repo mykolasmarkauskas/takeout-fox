@@ -63,13 +63,26 @@ const M = {
   roofTileA: std(0x6f4a3c, 0.6),
   roofTileB: std(0x5e3d32, 0.6),
   pole: std(0x5a3a28, 0.7),
+  gateRed: std(0xb8321f, 0.55),
   lanternRed: new THREE.MeshStandardMaterial({ color: 0xd8301f, emissive: 0xff2a10, emissiveIntensity: 1.0, roughness: 0.4 }),
   lanternGold: new THREE.MeshStandardMaterial({ color: 0xff9a1a, emissive: 0xff8a10, emissiveIntensity: 0.95, roughness: 0.4 }),
 };
 /** District looks. Index matches Game's DISTRICTS (one district every DISTRICT_LEN metres). */
 export const DISTRICT_LEN = 700;
+/** Matches the scene fog's far distance (Game). */
+export const FOG_END = 110;
 export const districtAt = (dist: number) => Math.floor(Math.max(0, dist) / DISTRICT_LEN) % 3;
-const BLEND = 45; // metres either side of a boundary where the two looks mix
+const BLEND = 90; // metres either side of a boundary where the two looks mix
+const smooth = (x: number) => { x = Math.min(1, Math.max(0, x)); return x * x * (3 - 2 * x); };
+/** Which two districts mix at this distance and how far along (t 0..1) the change is. */
+export function districtMix(dist: number) {
+  const d = Math.max(0, dist), n = Math.round(d / DISTRICT_LEN), B = n * DISTRICT_LEN;
+  if (n > 0 && Math.abs(d - B) < BLEND) return { a: (n - 1) % 3, b: n % 3, t: smooth((d - B + BLEND) / (2 * BLEND)) };
+  const i = districtAt(d);
+  return { a: i, b: i, t: 0 };
+}
+/** Stable 0..1 noise per ~9 m block, so the mix comes in clumps rather than salt and pepper. */
+const blockHash = (dist: number) => { const x = Math.sin(Math.floor(dist / 9) * 127.1 + 311.7) * 43758.5453; return x - Math.floor(x); };
 interface Theme { roof: [THREE.Material, THREE.Material]; kits: string[]; lanterns: THREE.Material[]; far: 'town' | 'sea' | 'garden'; chimneys: number; curb: 'none' | 'bollard' | 'pot' }
 const THEMES: Theme[] = [
   { roof: [M.roofTileA, M.roofTileB], kits: ['bld_noodle', 'bld_tower', 'bld_teal'], lanterns: [M.lanternRed, M.lanternGold, M.lanternRed], far: 'town', chimneys: 2, curb: 'none' },
@@ -145,6 +158,7 @@ function coinFace() {
 const COIN_TEX = coinFace();
 
 /** Hand-painted pun signs along the route, per district. */
+const GATE_NAMES = ['NOODLE ROOFS', 'HARBOUR LIGHTS', 'GARDEN TERRACES'];
 const SIGNS: string[][] = [
   ['WOK THIS WAY →', 'PHO-NOMENAL NOODLES', 'NO RUNNING ON ROOFS (lol)', 'RACCOONS: PLEASE KNOCK', 'LOST: 1 CHOPSTICK', 'DUMPLING SUPPORT GROUP — TUE', 'HONK IF HANGRY', 'SOUP OF THE DAY: YES', 'TIPS MAKE FOXES FAST', 'CAUTION: SPICY ZONE'],
   ['FISH & TIPS', 'THE KRAKEN IS ON BREAK', 'SEAGULLS ARE NOT WAITERS', 'BOATS: NO DELIVERY', 'SHRIMPLY THE BEST', 'ANCHOVY? AN-CHO-VERY!', 'DO NOT FEED THE CAPTAIN'],
@@ -180,6 +194,7 @@ function signTexture(text: string) {
 const signFace = new Map<string, THREE.Material>();
 const signWood = new THREE.MeshStandardMaterial({ color: 0x7a4a2a, roughness: 0.8 });
 const signGeo = new THREE.BoxGeometry(2.4, 0.94, 0.08);
+const gateBoardGeo = new THREE.BoxGeometry(3.6, 1.4, 0.16);
 const coinFaceMat = new THREE.MeshPhysicalMaterial({ map: COIN_TEX, bumpMap: COIN_TEX, bumpScale: 2.5, emissive: 0x6a3d00, emissiveIntensity: 0.25, roughness: 0.32, metalness: 0.6, clearcoat: 0.8, clearcoatRoughness: 0.15 });
 const coinEdgeMat = new THREE.MeshPhysicalMaterial({ color: 0xe9a21c, emissive: 0x6a3d00, emissiveIntensity: 0.25, roughness: 0.3, metalness: 0.65, clearcoat: 0.8 });
 
@@ -259,7 +274,7 @@ export class Chunk {
       list.forEach((g) => g.dispose());
       if (!merged) continue;
       const mesh = new THREE.Mesh(merged, m);
-      mesh.castShadow = true; mesh.receiveShadow = true;
+      mesh.castShadow = false; mesh.receiveShadow = true; // roadside decor: lit, but not drawn into the shadow map
       mesh.userData.own = true;
       this.dyn.add(mesh);
     }
@@ -303,18 +318,36 @@ export class Chunk {
   }
 
   smoke: THREE.Sprite[] = [];
+  boats: THREE.Object3D[] = [];
   private roofA!: THREE.Mesh;
   private roofB!: THREE.Mesh;
   /** Distance (m) at which the player crosses this chunk's local z = 0. */
   startDist = 0;
   /** Which district look to use at local z, blending randomly near a boundary. */
-  private themeAt(z: number, rnd: () => number) {
+  private themeAt(z: number, _rnd?: () => number) {
     const dist = this.startDist - z;
-    const i = districtAt(dist);
-    const into = Math.max(0, dist) % DISTRICT_LEN; // metres into the current district
-    if (dist > DISTRICT_LEN && into < BLEND && rnd() > 0.5 + into / (2 * BLEND)) return THEMES[districtAt(dist - BLEND)];
-    if (DISTRICT_LEN - into < BLEND && rnd() > 0.5 + (DISTRICT_LEN - into) / (2 * BLEND)) return THEMES[districtAt(dist + BLEND)];
-    return THEMES[i];
+    const m = districtMix(dist);
+    return THEMES[m.t > 0 && blockHash(dist) < m.t ? m.b : m.a];
+  }
+  private roofMats = [M.roofTileA.clone(), M.roofTileB.clone()] as THREE.MeshStandardMaterial[];
+
+  /** Paifang-style arch with the new district's name, the hand-over point between two looks. */
+  private gate(z: number, idx: number) {
+    const name = GATE_NAMES[idx];
+    for (const sd of [-1, 1]) {
+      this.box(0.55, 7.4, 0.55, 0.12, M.gateRed, sd * 4.3, 3.7, z);
+      this.box(0.95, 0.5, 0.95, 0.12, M.terrace, sd * 4.3, 0.25, z);
+    }
+    this.box(10.2, 0.45, 0.6, 0.15, M.gateRed, 0, 6.3, z);
+    this.box(11.4, 0.35, 1.5, 0.15, THEMES[idx].roof[0], 0, 7.6, z);
+    this.box(10.4, 0.3, 1.2, 0.12, THEMES[idx].roof[1], 0, 7.95, z);
+    this.box(9.6, 0.4, 0.5, 0.12, M.gateRed, 0, 7.15, z);
+    let face = signFace.get(name);
+    if (!face) signFace.set(name, (face = new THREE.MeshStandardMaterial({ map: signTexture(name), roughness: 0.75 })));
+    const board = new THREE.Mesh(gateBoardGeo, [signWood, signWood, signWood, signWood, face, signWood]);
+    board.position.set(0, 6.8, z + 0.36);
+    this.dyn.add(board);
+    for (const sd of [-1, 1]) this.put(geo.lantern.clone(), M.lanternRed, sd * 3.2, 5.65, z + 0.1, 0, 0, 0, 1.1, 1.3, 1.1);
   }
 
   private garland(z: number, rnd: () => number, th: Theme) {
@@ -342,6 +375,18 @@ export class Chunk {
   }
 
   private boat(x: number, z: number, rnd: () => number) {
+    if (kitHas('boat')) {
+      const b = kitClone('boat')!;
+      const sz = kitSize('boat')!;
+      if (sz.x > sz.z) b.rotation.y = Math.PI / 2; // lie along the quay
+      b.rotation.y += (rnd() - 0.5) * 0.5 + (rnd() < 0.5 ? Math.PI : 0);
+      b.scale.multiplyScalar(0.85 + rnd() * 0.3);
+      b.position.set(x, -2.55, z);
+      b.userData.bob = rnd() * 6;
+      this.dyn.add(b);
+      this.boats.push(b);
+      return;
+    }
     const L = 3.5 + rnd() * 2;
     this.box(1.5, 0.8, L, 0.35, M.hull, x, -2.2, z);
     this.box(1.6, 0.18, L + 0.1, 0.08, M.hullTrim, x, -1.78, z);
@@ -352,6 +397,14 @@ export class Chunk {
     this.put(sail.clone(), M.sail, x - 0.05, -1.4, z, 0, Math.PI, 0, 1, 1, -1);
   }
   private tree(x: number, y: number, z: number, k: number, rnd: () => number) {
+    if (kitHas('tree')) {
+      const t = kitClone('tree')!;
+      t.scale.multiplyScalar(k * (0.8 + rnd() * 0.4));
+      t.rotation.y = rnd() * Math.PI * 2;
+      t.position.set(x, y, z);
+      this.dyn.add(t);
+      return;
+    }
     this.put(new THREE.CylinderGeometry(0.14 * k, 0.2 * k, 1.6 * k, 6), M.trunk, x, y + 0.8 * k, z);
     this.put(geo.sphere.clone(), rnd() > 0.5 ? M.leaf : M.leafDark, x, y + 2 * k, z, 0, 0, 0, 2.2 * k, 1.8 * k, 2.2 * k);
     this.put(geo.sphere.clone(), M.leaf, x + 0.5 * k, y + 2.6 * k, z + 0.3 * k, 0, 0, 0, 1.4 * k, 1.2 * k, 1.4 * k);
@@ -360,6 +413,7 @@ export class Chunk {
 
   /** Drift chimney smoke upward (call every frame with the world clock). */
   animateSmoke(time: number) {
+    for (const b of this.boats) { const ph = b.userData.bob as number; b.position.y = -2.55 + Math.sin(time * 1.3 + ph) * 0.08; b.rotation.z = Math.sin(time * 1.1 + ph) * 0.04; }
     for (const sp of this.smoke) {
       const u = sp.userData as { x: number; y: number; z: number; ph: number };
       const f = (time * 0.35 + u.ph) % 1;
@@ -382,9 +436,19 @@ export class Chunk {
     this.pickups = [];
 
     this.smoke = [];
+    this.boats = [];
     const mid = this.themeAt(-CHUNK_LEN / 2, () => 0.5);
-    this.roofA.material = mid.roof[0];
-    this.roofB.material = mid.roof[1];
+    // roof tiles shade gradually through a district change instead of snapping per chunk
+    const mm = districtMix(this.startDist + CHUNK_LEN / 2);
+    for (let r = 0; r < 2; r++) {
+      const ca = (THEMES[mm.a].roof[r] as THREE.MeshStandardMaterial).color, cb = (THEMES[mm.b].roof[r] as THREE.MeshStandardMaterial).color;
+      this.roofMats[r].color.copy(ca).lerp(cb, mm.t);
+    }
+    this.roofA.material = this.roofMats[0];
+    this.roofB.material = this.roofMats[1];
+    // a gate over the street where one district hands over to the next
+    const gateD = Math.round((this.startDist + CHUNK_LEN / 2) / DISTRICT_LEN) * DISTRICT_LEN;
+    if (gateD > 0 && gateD >= this.startDist && gateD < this.startDist + CHUNK_LEN) this.gate(-(gateD - this.startDist), districtAt(gateD));
     const have = new Set(kitKeys('bld_'));
     for (const s of [-1, 1]) {
       // near row: Tripo houses below the roofline, varied size/turn, with the odd gap
@@ -482,7 +546,6 @@ export class Chunk {
       const board = new THREE.Mesh(signGeo, [signWood, signWood, signWood, signWood, face, signWood]);
       board.position.set(sd * 4.25, 2.6, sz);
       board.rotation.y = -sd * 0.45;
-      board.castShadow = true;
       this.dyn.add(board);
       this.put(new THREE.CylinderGeometry(0.07, 0.09, 2.3, 6), M.pole, sd * 4.25, 1.15, sz);
     }
@@ -506,8 +569,9 @@ export class Chunk {
         this.addObstacle('crate', lane, base);
         this.addCoinArc(lane, base);
       } else if (r < 0.7) {
-        for (let l = 0; l < 3; l++) this.addObstacle('laundry', l, base);
-        this.addCoinLine(1, base - 5, 4, 1);
+        // washing line across one lane only: dodge it, hop it or slide under, whatever feels right
+        this.addObstacle('laundry', lane, base);
+        this.addCoinLine((lane + 1 + Math.floor(rnd() * 2)) % 3, base - 4, 5, 1);
       } else if (r < 0.88 + d * 0.05) {
         for (let l = 0; l < 3; l++) this.addObstacle('gap', l, base);
         this.addCoinArc(1, base);
@@ -551,7 +615,6 @@ export class Chunk {
   }
   private addCoin(lane: number, z: number, y: number) {
     const m = new THREE.Mesh(geo.coin, [coinEdgeMat, coinFaceMat, coinFaceMat]);
-    m.castShadow = true;
     m.rotation.x = Math.PI / 2;
     m.position.set(LANES[lane], y, z);
     this.dyn.add(m);
@@ -563,7 +626,7 @@ export class Chunk {
     const add = (mesh: THREE.Mesh, x: number, y: number, zz: number) => { mesh.position.set(x, y, zz); mesh.userData.own = true; mesh.receiveShadow = true; g.add(mesh); return mesh; };
     let depth = 1;
     if (kind === 'laundry' && kitHas(kind)) {
-      // raised so the washing hangs at head height: run into it, or slide underneath
+      // one-lane washing line at head height: dodge, jump or slide under it
       const l = kitClone(kind)!;
       l.scale.multiplyScalar(1.3);
       l.position.y = 0.45;
@@ -654,7 +717,10 @@ export class World {
 
   /** Move the world toward the camera by dz and recycle chunks that passed. */
   advance(dz: number, difficulty: number) {
-    for (const c of this.chunks) c.group.position.z += dz;
+    for (const c of this.chunks) {
+      c.group.position.z += dz;
+      c.group.visible = c.group.position.z > -FOG_END; // beyond the fog it is all fog colour anyway
+    }
     let minZ = Infinity;
     for (const c of this.chunks) minZ = Math.min(minZ, c.group.position.z);
     for (const c of this.chunks) {

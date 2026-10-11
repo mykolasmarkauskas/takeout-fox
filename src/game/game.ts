@@ -1,7 +1,7 @@
 import * as THREE from 'three';
 import { createRaccoon, animateRaccoon, Raccoon, loadRaccoonGLB, raccoonInstance } from './raccoon';
 import { Scenery } from './scenery';
-import { districtAt } from './world';
+import { districtAt, districtMix, FOG_END } from './world';
 import { RoomEnvironment } from 'three/examples/jsm/environments/RoomEnvironment.js';
 import { Audio, SfxName } from './audio';
 import { BASE_SPEED, COLORS, GRAVITY, HIT_WINDOW, JUMP_V, LANES, MAX_SPEED, SLIDE_TIME } from './constants';
@@ -67,7 +67,6 @@ export class Game {
   readonly audio = new Audio();
   private chasers: THREE.Group[] = [];
   private quipT = 12;
-  private slideHints = 0;
   private raccoons: Raccoon[] = [];
   private raccoonMixers: (THREE.AnimationMixer | null)[] = [];
   private stars: THREE.Group;
@@ -118,13 +117,14 @@ export class Game {
     customer: HTMLElement; customerImg: HTMLImageElement; customerText: HTMLElement;
   }) {
     this.renderer = new THREE.WebGLRenderer({ canvas, antialias: true, powerPreference: 'high-performance' });
-    this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+    // phones: 1.5x is visually close to 2x/3x at a fraction of the fill cost
+    this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, matchMedia('(pointer: coarse)').matches ? 1.5 : 2));
     this.renderer.shadowMap.enabled = true;
     this.renderer.shadowMap.type = THREE.PCFSoftShadowMap;
     this.renderer.toneMapping = THREE.ACESFilmicToneMapping;
     this.renderer.toneMappingExposure = 0.95;
     this.scene.background = new THREE.Color(COLORS.sky);
-    this.scene.fog = new THREE.Fog(COLORS.fog, 30, 110);
+    this.scene.fog = new THREE.Fog(COLORS.fog, 30, FOG_END);
 
     const pm = new THREE.PMREMGenerator(this.renderer);
     this.scene.environment = pm.fromScene(new RoomEnvironment(), 0.04).texture;
@@ -257,6 +257,15 @@ export class Game {
     }
   }
   private fogTo = COLORS.fog;
+  private _ca = new THREE.Color(); private _cb = new THREE.Color();
+  /** Light follows the street: through a district change the sky and fog shift with every metre run. */
+  private blendSky() {
+    const m = districtMix(this.distance + 25); // a little ahead, where the eye is
+    const bg = this.scene.background as THREE.Color, fog = (this.scene.fog as THREE.Fog).color;
+    bg.copy(this._ca.set(DISTRICTS[m.a].sky)).lerp(this._cb.set(DISTRICTS[m.b].sky), m.t);
+    fog.copy(this._ca.set(DISTRICTS[m.a].fog)).lerp(this._cb.set(DISTRICTS[m.b].fog), m.t).lerp(bg, 0.6);
+    this.scenery.setHorizon(bg);
+  }
 
   private deliver() {
     const c = pick(CUSTOMERS);
@@ -352,12 +361,7 @@ export class Game {
     if (this.bubbleT > 0 && (this.bubbleT -= dt) <= 0) this.ui.bubble.classList.remove('on');
     if (this.customerT > 0 && (this.customerT -= dt) <= 0) this.ui.customer.classList.remove('on');
     if (this.districtT > 0 && (this.districtT -= dt) <= 0) this.ui.district.classList.remove('on');
-    if (this.skyK < 1) {
-      this.skyK = Math.min(1, this.skyK + dt / 5); // slow, smooth change of light between districts
-      (this.scene.background as THREE.Color).copy(this.skyFrom).lerp(this.skyTo, this.skyK);
-      (this.scene.fog as THREE.Fog).color.copy(this.scene.background as THREE.Color).lerp(new THREE.Color(this.fogTo), 0.4);
-      this.scenery.setHorizon(this.scene.background as THREE.Color);
-    }
+    if (this.state === 'run' || this.state === 'crash') this.blendSky();
 
     if (this.state === 'run') this.updateRun(dt);
     else if (this.state === 'crash') this.updateCrash(dt);
@@ -414,16 +418,12 @@ export class Game {
       if (cz - 45 > 0 || cz < -45) continue;
       for (const o of c.obstacles) {
         const z = cz + o.z;
-        if (o.kind === 'laundry' && !o.hit && z < -8 && z > -16 && !(o as { hinted?: boolean }).hinted && this.slideHints < 3) {
-          (o as { hinted?: boolean }).hinted = true; this.slideHints++;
-          this.say(matchMedia('(pointer: coarse)').matches ? 'Swipe ↓ to slide under!' : 'Press ↓ to slide under!', 1500);
-        }
         if (o.hit || Math.abs(z) > o.depth / 2 + 0.35) continue; // ~fox half-depth, a touch forgiving
         if (o.lane !== this.nearestLane()) continue;
         let hit = false;
         if (o.kind === 'chimney') hit = true;
         else if (o.kind === 'crate') hit = this.y < 1.05;
-        else if (o.kind === 'laundry') hit = !sliding;
+        else if (o.kind === 'laundry') hit = !sliding && this.y < 1.2;
         else if (o.kind === 'gap') hit = this.y < 0.15 && Math.abs(z) < o.depth / 2 - 0.3;
         if (hit) {
           o.hit = true;
