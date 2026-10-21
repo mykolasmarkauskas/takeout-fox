@@ -4,7 +4,7 @@ import { kitClone, kitHas, kitKeys, kitSize } from './kit';
 import { Instancer, type Placed } from './instancer';
 import { PUFF } from './scenery';
 import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
-import { BASE_SPEED, CHUNK_COUNT, CHUNK_LEN, COLORS, GRAVITY, JUMP_V, LANES, MAX_SPEED, ObstacleKind, RECYCLE_Z } from './constants';
+import { BASE_SPEED, CHUNK_COUNT, CHUNK_LEN, COLORS, GRAVITY, JUMP_V, LANES, ObstacleKind, RECYCLE_Z, speedAt } from './constants';
 
 // Standard (not physical) for the city: it covers most pixels, so keep the shader cheap on phones.
 const std = (c: number, rough = 0.7, extra: Partial<THREE.MeshPhysicalMaterialParameters> = {}) =>
@@ -648,7 +648,7 @@ export class Chunk {
 
   /** Rebuild decorative and gameplay content for a chunk starting at difficulty d (0..1). */
   fill(d: number, safe: boolean, rnd: () => number) {
-    this.speed = Math.min(MAX_SPEED, BASE_SPEED + d * 2500 * 0.006); // matches Game's speed ramp
+    this.speed = speedAt(this.startDist + CHUNK_LEN / 2); // the speed Marm will have here (coin arcs fit the jump)
     for (const c of [...this.dyn.children]) {
       this.dyn.remove(c);
       c.traverse((o) => { if (o instanceof THREE.Mesh && o.userData.own) o.geometry.dispose(); });

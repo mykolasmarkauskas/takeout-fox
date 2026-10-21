@@ -7,7 +7,12 @@ export const GRAVITY = 38;
 export const JUMP_V = 12.5;
 export const SLIDE_TIME = 0.7;
 export const BASE_SPEED = 13;
-export const MAX_SPEED = 30;
+export const MAX_SPEED = 32;
+/**
+ * Run speed by distance: noticeably quicker every few hundred metres early on, then
+ * creeping toward MAX_SPEED (about 17 m/s at 500 m, 20 at 1000 m, 25 at 2000 m, 30 at 5000 m).
+ */
+export const speedAt = (dist: number) => BASE_SPEED + (MAX_SPEED - BASE_SPEED) * (1 - Math.exp(-Math.max(0, dist) / 2000));
 export const HIT_WINDOW = 3; // second hit within this many seconds ends the run
 
 export const COLORS = {

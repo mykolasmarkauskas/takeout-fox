@@ -139,6 +139,9 @@
   .tk-win{flex:1;height:100%;overflow:hidden;position:relative}
   .tk-run{position:absolute;left:0;top:0;height:100%;display:flex;align-items:center;gap:8px;white-space:nowrap;will-change:transform}
   .tk-run img{height:26px;width:26px;object-fit:cover;border-radius:6px;border:2px solid #fff7e6}
+  .speedup{position:absolute;left:50%;top:calc(96px + env(safe-area-inset-top));transform:translate(-50%,0) scale(.6);opacity:0;pointer-events:none;z-index:4;background:#ffcf3a;color:#5a2a14;font:900 clamp(14px,4vw,20px) system-ui;padding:6px 16px;border-radius:999px;box-shadow:0 4px 0 rgba(0,0,0,.25);white-space:nowrap}
+  .speedup.on{animation:spd 1.6s cubic-bezier(.2,1.5,.4,1) forwards}
+  @keyframes spd{0%{opacity:0;transform:translate(-50%,0) scale(.6)}15%{opacity:1;transform:translate(-50%,0) scale(1.08)}25%{transform:translate(-50%,0) scale(1)}80%{opacity:1}100%{opacity:0;transform:translate(-50%,-14px) scale(1)}}
   .hidden{display:none}
 </style>
 </head>
