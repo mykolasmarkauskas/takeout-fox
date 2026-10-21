@@ -7,7 +7,7 @@ import { Ticker } from './ticker';
 import { districtAt, districtMix, FOG_END } from './world';
 import { RoomEnvironment } from 'three/examples/jsm/environments/RoomEnvironment.js';
 import { Audio, SfxName } from './audio';
-import { BASE_SPEED, COLORS, GRAVITY, HIT_WINDOW, JUMP_V, LANES, MAX_SPEED, SLIDE_TIME } from './constants';
+import { BASE_SPEED, COLORS, GRAVITY, HIT_WINDOW, JUMP_V, LANES, MAX_SPEED, SLIDE_TIME, speedAt } from './constants';
 import { FoxActor } from './actor';
 import { loadKit } from './kit';
 import { World } from './world';
@@ -295,8 +295,23 @@ export class Game {
   /** Per-run counters for daily tasks and achievements. */
   run: RunStats = newRunStats();
   private cleanFrom = 0;
+  private runT = 0; private slowK = 1; private speedStep = 0; private fovKick = 0;
+  private speedEl: HTMLElement | null = null;
+  private speedUp() {
+    this.sfx('chilli_whoosh', 1.5);
+    this.fovKick = 1;
+    if (!this.speedEl) {
+      const el = document.createElement('div');
+      el.className = 'speedup';
+      this.ui.score.parentElement!.parentElement!.appendChild(el);
+      this.speedEl = el;
+    }
+    this.speedEl.textContent = `⚡ Faster! ${this.speedStep * 500} m`;
+    this.speedEl.classList.remove('on'); void this.speedEl.offsetWidth; this.speedEl.classList.add('on');
+  }
   resetRun() {
     this.run = newRunStats(); this.cleanFrom = 0;
+    this.runT = 0; this.slowK = 1; this.speedStep = 0; this.fovKick = 0;
     this.world.reset((Math.random() * 1e9) | 0);
     this.distance = 0; this.coins = 0; this.speed = BASE_SPEED;
     this.lane = 1; this.x = 0; this.y = 0; this.vy = 0; this.slideT = 0;
@@ -476,9 +491,17 @@ export class Game {
       if (!g.shown && wz > -70 && wz < -14) { g.shown = true; this.ticker.breaking(g.cap, g.img); this.sfx('slide_whistle_up', 1.3); }
     }
     const difficulty = Math.min(1, this.distance / 2500);
-    this.speed = Math.min(MAX_SPEED, BASE_SPEED + this.distance * 0.006);
-    this.audio.setMusicRate(1 + ((this.speed - BASE_SPEED) / (MAX_SPEED - BASE_SPEED)) * 0.12);
+    // speed: the distance ramp, a short sprint-up at the start, a stumble after a bump that wears off
+    this.runT += dt;
+    this.slowK += (1 - this.slowK) * Math.min(1, dt * 0.9);
+    const ease = Math.min(1, 0.55 + this.runT * 0.25);
+    const base = speedAt(this.distance);
+    this.speed = base * ease * this.slowK;
+    this.audio.setMusicRate(1 + ((base - BASE_SPEED) / (MAX_SPEED - BASE_SPEED)) * 0.14);
     if (this.dashT > 0) { this.dashT -= dt; this.speed *= 1.4; if (this.dashT <= 0) this.showPower(); }
+    // every 500 m: it gets faster, and the game says so
+    const step = Math.floor(this.distance / 500);
+    if (step > this.speedStep) { this.speedStep = step; this.speedUp(); }
     if (this.floatT > 0 && (this.floatT -= dt) <= 0) this.showPower();
     const dz = this.speed * dt;
     this.world.advance(dz, difficulty);
@@ -592,7 +615,7 @@ export class Game {
     this.lastHit = this.time; this.cleanFrom = this.distance;
     this.buzz(70); this.shakeT = 0.35; this.shakeA = 0.22; this.dust(this.x, 8);
     this.chaseGap = 2.2;
-    this.speed *= 0.8;
+    this.slowK = 0.7;
     this.sfx('boing'); this.sfx('slide_whistle_down');
     this.say(pick(BARKS.hit));
   }
@@ -700,6 +723,10 @@ export class Game {
     const wide = this.camera.aspect > 1 ? 1 : 0;
     this.camera.position.set(cx, 3.25 + k * 0.45 + wide * 0.5, 6.3 + k * 0.9 + wide * 0.8);
     this.camera.lookAt(cx * 0.7, 1.75 + k * 0.1, -18);
+    // the view widens with speed, plus a short punch when a speed-up lands
+    this.fovKick = Math.max(0, this.fovKick - 0.03);
+    const fov = 55 + k * 7 + this.fovKick * 4 + (this.dashT > 0 ? 4 : 0);
+    if (Math.abs(this.camera.fov - fov) > 0.05) { this.camera.fov += (fov - this.camera.fov) * 0.15; this.camera.updateProjectionMatrix(); }
     if (this.shakeT > 0) {
       const a = this.shakeA * Math.min(1, this.shakeT / 0.25);
       this.camera.position.x += (Math.random() - 0.5) * a; this.camera.position.y += (Math.random() - 0.5) * a * 0.6;
