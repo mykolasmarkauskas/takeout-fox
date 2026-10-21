@@ -17,7 +17,6 @@ export const KIT: Record<string, KitSpec> = {
   chimney: { url: 'models/chimney.glb', fit: 'height', size: 3.6 },
   crate: { url: 'models/crate.glb', fit: 'width', size: 1.75 },
   laundry: { url: 'models/laundry.glb', fit: 'width', size: 2.4 },
-  lantern: { url: 'models/lantern.glb', fit: 'height', size: 0.85 },
   boat: { url: 'models/boat.glb', fit: 'max', size: 6.5 },
   tree: { url: 'models/tree.glb', fit: 'height', size: 4.2 },
   // district versions of the jump-over crate
@@ -50,10 +49,15 @@ const ready = new Map<string, THREE.Object3D>();
 const sizes = new Map<string, THREE.Vector3>();
 let loading: Promise<void> | null = null;
 
-export function loadKit() {
-  if (loading) return loading;
-  const loader = new GLTFLoader();
-  loading = Promise.all(Object.entries(KIT).map(async ([key, spec]) => {
+/**
+ * Models load in two waves: the Noodle Roofs street (and every obstacle) first, so the first
+ * run can start after ~10 MB; the harbour and garden models follow in the background
+ * (`loadRest`), long before a run reaches them at 700 m.
+ */
+const FIRST = ['bld_noodle', 'bld_teal', 'bld_tower', 'noodlehouse_b', 'noodlehouse_c', 'chimney', 'crate', 'laundry', 'tree', 'pigeons', 'chimneytherapy', 'barrels', 'cart'];
+let loader: GLTFLoader | null = null;
+async function loadOne(key: string, spec: KitSpec) {
+    loader ??= new GLTFLoader();
     try {
       const gltf = await loader.loadAsync(modelUrl(spec.url));
       const root = gltf.scene;
@@ -81,8 +85,17 @@ export function loadKit() {
     } catch {
       /* optional asset */
     }
-  })).then(() => undefined);
+}
+export function loadKit() {
+  if (loading) return loading;
+  loading = Promise.all(FIRST.filter((k) => KIT[k]).map((k) => loadOne(k, KIT[k]))).then(() => undefined);
   return loading;
+}
+let rest: Promise<void> | null = null;
+/** Second wave: everything not needed on the first street. Safe to call more than once. */
+export function loadRest() {
+  rest ??= (loading ?? Promise.resolve()).then(() => Promise.all(Object.entries(KIT).filter(([k]) => !FIRST.includes(k)).map(([k, s]) => loadOne(k, s)))).then(() => undefined);
+  return rest;
 }
 
 /** A fresh placeable copy, or null when the asset isn't available. */

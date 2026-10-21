@@ -3,7 +3,7 @@
  * the browser: every page ships as finished HTML so search engines read it without scripts.
  * Same approach as hello-pip's landing (src/landing/render.ts there).
  */
-import { CAST_PAGE, COMMON, DISTRICTS_PAGE, HOME, HOW, NAME, PAGES, SITE, TIPS_PAGE, type Page } from './content';
+import { ARTICLES, CAST_PAGE, COMMON, DISTRICTS_PAGE, HOME, HOW, NAME, PAGES, SITE, TIPS_PAGE, type Page } from './content';
 
 export const esc = (s: string) => s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
 const art = (n: string) => `/art/${n}.webp`;
@@ -99,17 +99,17 @@ ${BEACON}`;
 }
 
 function top(current: string) {
-  const links = PAGES.filter((p) => p.id !== 'home')
+  const links = PAGES.filter((p) => p.id !== 'home' && !p.hidden)
     .map((p) => `<a href="/${p.path}"${p.id === current ? ' aria-current="page"' : ''}>${esc(p.nav === 'Tips for a high score' ? 'Tips' : p.nav)}</a>`).join('');
   return `<header class="top"><div class="wrap"><a class="brand" href="/"><img src="/icons/icon-64.png" alt="" width="32" height="32" />${NAME}</a><nav aria-label="Guides">${links}</nav><a class="btn small" href="/play/">${COMMON.play_short}</a></div></header>`;
 }
 
 function foot() {
-  const guides = PAGES.map((p) => `<li><a href="/${p.path}">${esc(p.id === 'home' ? `${NAME} home` : p.nav)}</a></li>`).join('') + `<li><a href="/play/">Play ${NAME}</a></li>`;
+  const guides = PAGES.filter((p) => !['privacy', 'terms'].includes(p.id)).map((p) => `<li><a href="/${p.path}">${esc(p.id === 'home' ? `${NAME} home` : p.nav)}</a></li>`).join('') + `<li><a href="/play/">Play ${NAME}</a></li>`;
   const more = COMMON.more.map(([h, n, t]) => `<li><a href="${h}">${esc(n)}</a>: ${esc(t)}</li>`).join('');
   return `<footer class="foot"><div class="wrap cols">
 <div><h2>${NAME}</h2><ul>${guides}</ul></div>
-<div><h2>${esc(COMMON.more_heading)}</h2><ul>${more}</ul><p>${esc(COMMON.footer_fiction)}</p><p>${esc(COMMON.footer_privacy)}</p></div>
+<div><h2>${esc(COMMON.more_heading)}</h2><ul>${more}</ul><p>${esc(COMMON.footer_fiction)}</p><p>${esc(COMMON.footer_privacy)}</p><p><a href="/privacy/">Privacy policy</a> · <a href="/terms/">Terms of use</a></p></div>
 </div></footer>`;
 }
 
@@ -200,7 +200,24 @@ ${playBand('Go for a new best')}</main>${foot()}`;
   return { head: head(p, [crumbsLd(p)]), body };
 }
 
-const RENDER: Record<string, () => { head: string; body: string }> = { home, how, districts, cast, tips };
+function article(id: string) {
+  const p = page(id), a = ARTICLES[id];
+  const ld: object[] = [crumbsLd(p)];
+  if (a.faq) ld.push({ '@context': 'https://schema.org', '@type': 'FAQPage', mainEntity: a.faq.map(([q, t]) => ({ '@type': 'Question', name: q, acceptedAnswer: { '@type': 'Answer', text: t } })) });
+  const legal = id === 'privacy' || id === 'terms';
+  const body = `${top('')}${pageHead(p)}<main class="wrap"><div class="prose">
+${a.sections.map(([h, ps], i) => `<section id="s${i + 1}"><h2>${esc(h)}</h2>${ps.map((t) => `<p>${esc(t)}</p>`).join('')}</section>`).join('\n')}
+${a.faq ? `<section class="faq"><h2>Questions</h2>${a.faq.map(([q, t]) => `<details><summary>${esc(q)}</summary><p>${esc(t)}</p></details>`).join('')}</section>` : ''}
+${legal ? '' : `<p>Read next: <a href="/how-to-play/">how to play</a> · <a href="/tips/">tips for a high score</a> · <a href="/districts/">the three districts</a></p>`}
+</div>${legal ? '' : playBand('Start a run')}</main>${foot()}`;
+  return { head: head(p, ld), body };
+}
+
+const RENDER: Record<string, () => { head: string; body: string }> = {
+  home, how, districts, cast, tips,
+  subway: () => article('subway'), runner: () => article('runner'), fox: () => article('fox'),
+  privacy: () => article('privacy'), terms: () => article('terms'),
+};
 export function renderPage(id: string) { return RENDER[id](); }
 
 export function render404() {

@@ -6,6 +6,7 @@
   "scripts": {
     "dev": "vite --host",
     "build": "tsc --noEmit && vite build",
+    "build:portal": "tsc --noEmit && node tools/build_portal.mjs",
     "preview": "vite preview --host",
     "lint": "tsc --noEmit",
     "test": "echo \"no tests yet\""

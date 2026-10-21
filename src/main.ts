@@ -3,6 +3,7 @@ import { Game } from './game/game';
 import { renderBoard, savedName, submitScore, topScores, type Entry } from './game/leaderboard';
 import { Progress, SHOP } from './game/progress';
 import { track } from './game/stats';
+import { PORTAL, portal } from './game/portal';
 
 const $ = (id: string) => document.getElementById(id)!;
 const game = new Game($('c') as HTMLCanvasElement, {
@@ -170,6 +171,7 @@ game.onOver = async (score, dist, tips) => {
     near ? `<div class="line"><span>🎯 ${esc(near.text)}</span><span>${Math.floor(near.best)}/${near.goal}</span></div>` : '<div class="line"><span>✅ All daily tasks done!</span></div>',
   ];
   $('overGoals').innerHTML = lines.join('');
+  if (score > prevBest && prevBest > 0) portal.happy();
   prevBest = Math.max(prevBest, score);
   refreshBank();
   nameInput.value = savedName();
@@ -227,7 +229,10 @@ frame.addEventListener('pointerup', (e) => {
 frame.addEventListener('pointercancel', () => { down = false; });
 
 // ---- installable app: offline play after the first visit
-if ('serviceWorker' in navigator && location.hostname !== 'localhost') {
+if (!PORTAL && 'serviceWorker' in navigator && location.hostname !== 'localhost') {
   window.addEventListener('load', () => { navigator.serviceWorker.register('/sw.js').catch(() => { /* not critical */ }); });
 }
 window.addEventListener('appinstalled', () => track('install'));
+
+// portal SDK (CrazyGames build only): loading is reported until the menu is ready
+portal.init().then(() => { portal.loadingStart(); setTimeout(() => portal.loadingStop(), 300); });
