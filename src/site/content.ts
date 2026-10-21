@@ -16,6 +16,8 @@ export interface Page {
   description: string; // meta description, ~155 chars
   h1: string;
   lead: string;
+  /** Not in the top bar (legal pages, search-landing articles); still in the footer and sitemap. */
+  hidden?: boolean;
 }
 
 export const PAGES: Page[] = [
@@ -53,6 +55,41 @@ export const PAGES: Page[] = [
     description: 'Practical Takeout Fox tips for longer runs and a higher score: how the score is counted, why tips matter, using power-ups well and surviving top speed.',
     h1: 'Takeout Fox tips for a high score',
     lead: 'The score is simple maths, and a few habits make runs much longer. These tips come straight from how the game counts points and how the rooftops are laid out.',
+  },
+  {
+    id: 'subway', path: 'games-like-subway-surfers/', nav: 'Games like Subway Surfers', hidden: true,
+    title: 'Games Like Subway Surfers You Can Play Free in a Browser',
+    description: 'Like lane-switching runners such as Subway Surfers? Takeout Fox is a free 3D endless runner you play in the browser: swipe, jump, slide, no download.',
+    h1: 'A game like Subway Surfers, right in your browser',
+    lead: 'If you love three-lane runners where you swipe, jump and slide past everything the street throws at you, Takeout Fox plays the same way, runs in any browser and costs nothing.',
+  },
+  {
+    id: 'runner', path: 'endless-runner-games/', nav: 'Free endless runner online', hidden: true,
+    title: 'Free Endless Runner Game Online, No Download: Takeout Fox',
+    description: 'Play a free 3D endless runner online with no download or sign-up. Three lanes, rising speed, power-ups, daily tasks and a leaderboard. Phone or computer.',
+    h1: 'A free endless runner you can play online',
+    lead: 'Takeout Fox is a 3D endless runner that opens in a browser tab: no app store, no account, no ads. The run never ends, it just gets faster.',
+  },
+  {
+    id: 'fox', path: 'fox-games/', nav: 'Fox games', hidden: true,
+    title: 'Fox Game Online: Run as Marm the Fox Courier, Free',
+    description: 'A free fox game you play online: Marm the fox courier races over rooftops with a bag of noodles, a crowd of hangry raccoons on his tail. No download.',
+    h1: 'A fox game you can play free online',
+    lead: 'Marm is a fox with a teal delivery backpack and one last order of extra-spicy noodles. You keep him running across the rooftops of Lanternfall for as long as you can.',
+  },
+  {
+    id: 'privacy', path: 'privacy/', nav: 'Privacy policy', hidden: true,
+    title: 'Privacy Policy · Takeout Fox',
+    description: 'What Takeout Fox stores and why: progress on your device, an optional leaderboard name, anonymous play counts. No accounts, no ads, no tracking cookies.',
+    h1: 'Privacy policy',
+    lead: 'Short version: no account, no ads, no tracking cookies. Your progress stays on your device. If you save a name to the leaderboard, that name and your score are stored. We count runs anonymously to make the game better.',
+  },
+  {
+    id: 'terms', path: 'terms/', nav: 'Terms of use', hidden: true,
+    title: 'Terms of Use · Takeout Fox',
+    description: 'The terms for playing Takeout Fox: free to play, fair play on the leaderboard, what you may and may not do with the game, and how to contact us.',
+    h1: 'Terms of use',
+    lead: 'Takeout Fox is free to play. These few rules keep it fair and fun for everyone.',
   },
 ];
 
@@ -177,3 +214,119 @@ export const TIPS_PAGE = {
     ['Deliveries are free points', 'Every 350 metres a customer takes the order for five tips. You don’t have to do anything except stay alive.'],
   ] as [string, string][],
 };
+
+/** Plain article pages: [heading, paragraphs][]. Facts must match the game (src/game/*). */
+export const CONTACT = 'hello@takeoutfox.com';
+export const UPDATED = '21 October 2026';
+export const ARTICLES: Record<string, { sections: [string, string[]][]; faq?: [string, string][] }> = {
+  subway: {
+    sections: [
+      ['Why lane runners are so hard to put down', [
+        'Three lanes, one thumb and a street that never ends: you always know what to do, the question is only whether you do it in time. Every run is short enough for a bus stop and every near miss makes you want one more.',
+        'Takeout Fox keeps exactly that loop. Swipe left or right to change lanes, swipe up to jump, swipe down to slide. A short tap also jumps. On a computer the arrow keys or WASD do the same.',
+      ]],
+      ['What is the same, what is different', [
+        'Same: three lanes, swipe controls, coins to collect (here they are tips from customers), power-ups, a chase behind you and a speed that keeps climbing.',
+        'Different: you run over rooftops instead of train tracks, through three districts that change the whole scenery (Noodle Roofs, Harbour Lights and Garden Terraces), and the chasers are a crowd of hangry raccoons who want your noodles. A bump does not end the run at once: a second bump within a few seconds does.',
+        'There is no app to install, no account and no ads. The game runs in Chrome, Safari, Firefox and Edge on phones, tablets and computers.',
+      ]],
+      ['Things to chase once you are hooked', [
+        'Three daily tasks give bonus tips every day, achievements come in tiers that keep getting bigger, and the tips you bank buy bag colours and extras for Marm in the shop. A shared leaderboard has an all-time and a today tab.',
+      ]],
+    ],
+    faq: [
+      ['Is Takeout Fox free?', 'Yes. It is free to play in the browser, with no download, no sign-up and no ads.'],
+      ['Does it work on a phone?', 'Yes. It is made for portrait phones first, and also works on tablets and computers.'],
+      ['Is it made by the same people as Subway Surfers?', 'No. Takeout Fox is an independent game. We only compare it because it plays in a similar three-lane style.'],
+    ],
+  },
+  runner: {
+    sections: [
+      ['Play in a tab, keep running', [
+        'Open takeoutfox.com/play and press Run. The first district loads in seconds and the rest streams in while you play. Once it has loaded, you can add it to your home screen and it works offline too.',
+      ]],
+      ['How a run works', [
+        'Marm starts at a jog and gets quicker every few hundred metres. Chimneys block a lane, crates and washing lines can be jumped or dodged, and gaps in the roof must be jumped. One bump slows you down and brings the raccoons closer; a second bump soon after ends the run.',
+        'Your score is the distance you run, boosted by the tips you collect. Power-ups help: the hot bag shields one hit, the chilli makes you sprint through obstacles, the umbrella lets you float over the gaps.',
+      ]],
+      ['Why it stays fresh', [
+        'Every 700 metres the city changes around you, from noodle-shop roofs to a harbour boardwalk to terraced gardens. Funny scenes play out beside the track and the news ticker reports on them. Daily tasks, tiered achievements and a shop give every run a goal.',
+      ]],
+    ],
+    faq: [
+      ['Do I need to install anything?', 'No. It runs in the browser. You can add it to your home screen if you like.'],
+      ['Does the run ever end?', 'Only when you bump twice in quick succession. The street itself is endless.'],
+      ['Is there a leaderboard?', 'Yes, with all-time and today tabs. Saving a name is optional.'],
+    ],
+  },
+  fox: {
+    sections: [
+      ['Meet Marm', [
+        'Marm is the fastest courier in Lanternfall: a chunky orange fox in a mustard hoodie, red cap and teal delivery backpack. His grandmother runs the noodle shop, and tonight the last order is extra spicy and very late.',
+      ]],
+      ['What you do', [
+        'Keep Marm running across the rooftops. Swipe to change lanes, jump chimneys and gaps, slide under washing lines, collect tips and grab power-ups. Behind him, thirty raccoons who smelled the noodles are not giving up.',
+      ]],
+      ['Make the fox yours', [
+        'Tips you bank buy new bag colours and extras for Marm: a cosy scarf, cool shades or a chef hat. Daily tasks and achievements pay out more tips.',
+      ]],
+    ],
+    faq: [
+      ['Is this fox game free?', 'Yes, free in the browser with no ads and no sign-up.'],
+      ['Is it suitable for kids?', 'Yes. It is cartoon slapstick: nobody gets hurt, Marm just flattens like a pancake now and then.'],
+    ],
+  },
+  privacy: {
+    sections: [
+      ['Who we are', [
+        `Takeout Fox (takeoutfox.com) is made by an independent developer in Lithuania. For anything about this policy, write to ${CONTACT}.`,
+      ]],
+      ['What stays on your device', [
+        'Your progress (tips banked, daily tasks, achievements, shop items), your settings (volumes, battery saver), your best score and the leaderboard name you last used are kept in your browser\'s local storage. They never leave your device unless you save a score. You can delete them any time by clearing this site\'s data in your browser.',
+        'If you add the game to your home screen, your browser also keeps a copy of the game files so it can run offline.',
+      ]],
+      ['The leaderboard (only if you save a score)', [
+        'When you choose to save a score we store the name you typed, your score, distance, tips and the time. To stop spam, we also keep a one-way scrambled code made from your network address for about ten minutes; the address itself is not stored. Names and scores stay on the board while they are among the top results.',
+        'Please do not use your full real name. We remove names that are offensive or scores that are clearly not real.',
+      ]],
+      ['Anonymous play statistics', [
+        'To find out where the game is too hard or too easy, the game sends a few anonymous events: a run started, how far it got (in 250 m steps), what ended it and in which district, and when a daily task, achievement or shop item is completed. These are added up into daily totals. No network address, device identifier, name or cookie is stored with them. Daily totals are kept for 30 days.',
+      ]],
+      ['Services that help run the site', [
+        'Cloudflare delivers the site and counts page visits with Cloudflare Web Analytics, which does not use cookies. Hostinger hosts the site and, like every web host, keeps short-lived server logs for security and troubleshooting.',
+      ]],
+      ['What we do not do', [
+        'No accounts, no ads, no tracking or advertising cookies, no selling or sharing of data. If ads are ever added to an app version, this policy will be updated first and you will be asked where the law requires it.',
+      ]],
+      ['Children', [
+        'The game is suitable for all ages and does not ask anyone for personal information. The only thing anyone can type is a leaderboard name, which is optional.',
+      ]],
+      ['Your rights', [
+        `Under the GDPR you can ask what we hold about you and ask us to delete it. In practice the only thing that can be linked to you is a leaderboard name: write to ${CONTACT} with the name and score and we will remove it.`,
+      ]],
+      ['Changes', [
+        `If this policy changes, the new version will be posted here with a new date. Last updated: ${UPDATED}.`,
+      ]],
+    ],
+  },
+  terms: {
+    sections: [
+      ['Playing', [
+        'Takeout Fox is free to play for personal, non-commercial fun. You do not need an account.',
+      ]],
+      ['Fair play', [
+        'Leaderboard names must not be offensive, impersonate someone or advertise anything. Scores must come from real play. We may remove any name or score that breaks these rules, without notice.',
+      ]],
+      ['The game and its content', [
+        'The game, its characters (Marm, the Hangry Crowd and the people of Lanternfall), art, music, sounds and code belong to their maker. You may share links, screenshots and videos of your runs. You may not copy, sell or re-host the game without permission.',
+      ]],
+      ['No guarantees', [
+        'The game is provided as it is. We do our best to keep it running, but it may change, pause or stop, and progress kept on your device can be lost if your browser data is cleared.',
+      ]],
+      ['Contact and law', [
+        `Questions: ${CONTACT}. These terms are governed by the laws of the Republic of Lithuania. Last updated: ${UPDATED}.`,
+      ]],
+    ],
+  },
+};
+

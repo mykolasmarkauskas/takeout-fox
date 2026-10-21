@@ -13,8 +13,11 @@
 <meta property="og:image" content="https://takeoutfox.com/og.jpg" />
 <meta name="description" content="Run, dodge and deliver. Help Marm the fox courier get the takeout through before the Hangry Crowd catches up." />
 <style>
-  html,body{margin:0;height:100%;background:#2a1b14;overflow:hidden;touch-action:none;font-family:system-ui,-apple-system,"Segoe UI",sans-serif}
-  #stage{position:fixed;inset:0;display:flex;align-items:center;justify-content:center}
+  html,body{margin:0;height:100%;background:#2a1b14;overflow:hidden;touch-action:none;user-select:none;-webkit-user-select:none;font-family:system-ui,-apple-system,"Segoe UI",sans-serif}
+  #stage{position:fixed;inset:0;display:flex;align-items:center;justify-content:center;overflow:hidden}
+  /* wide screens (desktop, 16:9 portal frames): the key art, blurred and dimmed, fills the sides */
+  #stage::before{content:'';position:absolute;inset:-40px;background:#2a1b14 url(/art/key_poster.webp) center/cover no-repeat;filter:blur(22px) brightness(.5) saturate(1.1);transform:scale(1.05)}
+  #frame{box-shadow:0 0 0 1px rgba(0,0,0,.25),0 18px 60px rgba(0,0,0,.45)}
   #frame{position:relative;overflow:hidden;height:100%;aspect-ratio:9/16;max-width:100%;background:#f9c98a}
   canvas{display:block;width:100%;height:100%}
   .hud{position:absolute;left:0;right:0;top:0;padding:calc(10px + env(safe-area-inset-top)) 14px 0;display:flex;justify-content:space-between;color:#fff;font-weight:800;text-shadow:0 2px 0 rgba(0,0,0,.35);pointer-events:none;font-size:clamp(16px,4.4vw,26px)}
@@ -170,7 +173,8 @@
     <label class="set-row"><span>Voices</span><input type="range" id="volVoice" min="0" max="100"></label>
     <label class="set-row"><span>Battery saver</span><input type="checkbox" id="saver"><small class="set-note">Smoother on older phones</small></label>
     <button class="btn ghost" id="replayIntro" type="button">Watch the story again</button>
-    <button class="btn" id="closeSettings" type="button">Done</button></div></div>
+    <button class="btn" id="closeSettings" type="button">Done</button>
+    <p class="set-note" style="margin:0"><a href="/privacy/" target="_blank" rel="noopener">Privacy policy</a> · <a href="/terms/" target="_blank" rel="noopener">Terms</a></p></div></div>
   <div class="sheet hidden" id="tasks"><div class="box"><h2>🎯 Daily tasks</h2><div id="taskList"></div><p class="sub">New tasks every day.</p><p class="sub"><b>Achievements</b> · finish one, a bigger one appears</p><div id="achList"></div><button class="btn" id="closeTasks" type="button">Close</button></div></div>
   <div class="sheet hidden" id="shop"><div class="box"><h2>🛍 Shop</h2><span class="bank" id="shopBank" style="align-self:center;color:#fff">💰 0</span><p class="sub">Bags</p><div class="shop" id="shopBags"></div><p class="sub">Extras</p><div class="shop" id="shopAcc"></div><button class="btn" id="closeShop" type="button">Done</button></div></div>
   <div class="sheet hidden" id="board"><div class="box"><h2>🏆 Top couriers</h2><div class="tabs"><button class="on" id="tabAll" type="button">All time</button><button id="tabToday" type="button">Today</button></div><div class="lb" id="boardList">Loading…</div><button class="btn" id="closeBoard" type="button">Close</button></div></div>

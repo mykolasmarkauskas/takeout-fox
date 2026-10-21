@@ -5,3 +5,6 @@ dist/
 .env
 _to_delete/
 takeout-fox-data/
+dist-portal/
+dist-portal.zip
+index.portal.html

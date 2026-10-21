@@ -4,12 +4,13 @@ import { Scenery, PUFF } from './scenery';
 import { newRunStats, type RunStats } from './progress';
 import { track } from './stats';
 import { Ticker } from './ticker';
+import { portal } from './portal';
 import { districtAt, districtMix, FOG_END } from './world';
 import { RoomEnvironment } from 'three/examples/jsm/environments/RoomEnvironment.js';
 import { Audio, SfxName } from './audio';
 import { BASE_SPEED, COLORS, GRAVITY, HIT_WINDOW, JUMP_V, LANES, MAX_SPEED, SLIDE_TIME, speedAt } from './constants';
 import { FoxActor } from './actor';
-import { loadKit } from './kit';
+import { loadKit, loadRest } from './kit';
 import { World } from './world';
 
 type State = 'menu' | 'run' | 'crash' | 'over';
@@ -141,7 +142,11 @@ export class Game {
     this.scene.add(this.world.group);
     this.scene.add(this.scenery.group);
     this.scenery.setHorizon(this.scene.background as THREE.Color);
-    loadKit().then(() => { if (this.state === 'menu') this.world.reset(1); });
+    loadKit().then(() => {
+      if (this.state === 'menu') this.world.reset(1);
+      // harbour and garden models: after the first street is up, without competing with it
+      setTimeout(() => loadRest(), 2500);
+    });
     this.scene.add(this.fox.group);
     const pw = document.createElement('div');
     pw.style.cssText = 'position:absolute;left:14px;top:58px;display:flex;gap:6px;pointer-events:none;font:800 14px system-ui;color:#fff;text-shadow:0 2px 0 rgba(0,0,0,.35)';
@@ -388,6 +393,7 @@ export class Game {
     this.audio.startMusic();
     this.say(pick(BARKS.start));
     this.ticker.show(true);
+    portal.start();
   }
 
   // ---- input
@@ -425,6 +431,7 @@ export class Game {
     this.paused = true;
     this.audio.pausedByGame = true; this.audio.suspend();
     this.ticker.pause();
+    portal.stop();
     return true;
   }
   resume() {
@@ -432,6 +439,7 @@ export class Game {
     this.paused = false;
     this.audio.pausedByGame = false; this.audio.resume();
     this.ticker.resume();
+    if (this.state === 'run' || this.state === 'crash') portal.start();
   }
   /** Leave the run and go back to the title screen. */
   toMenu() {
@@ -441,6 +449,7 @@ export class Game {
     this.resetRun();
     this.state = 'menu';
     this.ticker.show(false);
+    portal.stop();
     this.ui.over.classList.add('hidden');
     this.ui.card.classList.remove('on');
     this.ui.menu.classList.remove('hidden');
@@ -679,6 +688,7 @@ export class Game {
   private end() {
     this.state = 'over';
     this.ticker.show(false);
+    portal.stop();
     track('end', this.crashKind, this.distance, districtAt(this.distance));
     this.ui.card.classList.remove('on');
     this.sfx('game_over');

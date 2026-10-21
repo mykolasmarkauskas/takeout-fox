@@ -4,6 +4,8 @@
  */
 export interface Entry { name: string; score: number; dist: number; tips: number; me?: boolean }
 
+import { PORTAL } from './portal';
+// on a game portal the board is kept on this device only (no requests to takeoutfox.com)
 const API = import.meta.env.BASE_URL + 'api/scores.php';
 const LOCAL = 'tf_scores';
 const NAME = 'tf_name';
@@ -28,6 +30,7 @@ async function withTimeout<T>(p: Promise<T>, ms = 4000) {
 /** Top scores; `global` tells whether they came from the shared board. */
 export async function topScores(): Promise<{ list: Entry[]; global: boolean; today: Entry[] | null }> {
   try {
+    if (PORTAL) throw new Error('portal');
     const r = await withTimeout(fetch(API, { cache: 'no-store' }));
     if (!r.ok || !(r.headers.get('content-type') || '').includes('json')) throw new Error('no api');
     const j = await r.json();
@@ -45,6 +48,7 @@ export async function submitScore(name: string, score: number, dist: number, tip
   const mine: Entry = { name, score, dist: Math.floor(dist), tips };
   const local = localAdd(mine);
   try {
+    if (PORTAL) throw new Error('portal');
     const r = await withTimeout(fetch(API, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(mine) }));
     if (!r.ok || !(r.headers.get('content-type') || '').includes('json')) throw new Error('no api');
     const j = await r.json();

@@ -37,13 +37,19 @@ export default defineConfig({
     target: 'es2020',
     chunkSizeWarningLimit: 900,
     rollupOptions: {
-      input: {
+      // tools/build_portal.mjs: just the game, from a generated index.portal.html
+      input: process.env.TF_PORTAL_BUILD ? { index: page('./index.portal.html') } : {
         home: page('./index.html'),
         play: page('./play/index.html'),
         how: page('./how-to-play/index.html'),
         districts: page('./districts/index.html'),
         characters: page('./characters/index.html'),
         tips: page('./tips/index.html'),
+        subway: page('./games-like-subway-surfers/index.html'),
+        runner: page('./endless-runner-games/index.html'),
+        fox: page('./fox-games/index.html'),
+        privacy: page('./privacy/index.html'),
+        terms: page('./terms/index.html'),
       },
     },
   },
